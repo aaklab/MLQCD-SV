@@ -1,0 +1,43 @@
+model:
+  name: "transformer"
+  type: "attention_based"
+  
+architecture:
+  sequence_length: 100
+  d_model: 128
+  num_heads: 8
+  num_layers: 6
+  d_ff: 512
+  dropout: 0.1
+  
+  encoder:
+    vocab_size: null  # Will be set based on data
+    max_position_encoding: 1000
+    
+  decoder:
+    output_dim: 1
+    
+training:
+  batch_size: 32
+  epochs: 100
+  learning_rate: 0.0001
+  optimizer: "adam"
+  loss: "mse"
+  validation_split: 0.2
+  scheduler:
+    type: "cosine_annealing"
+    T_max: 100
+    
+  early_stopping:
+    patience: 20
+    monitor: "val_loss"
+    
+data:
+  sequence_features: []  # Will be populated based on dataset
+  target: "target_variable"
+  tokenization: "word_level"  # or "char_level"
+  padding: "post"
+  
+paths:
+  model_save: "results/checkpoints/transformer_model.h5"
+  logs: "results/logs/transformer_training.log"

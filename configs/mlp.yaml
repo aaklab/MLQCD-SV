@@ -1,0 +1,30 @@
+model:
+  name: "mlp"
+  type: "neural_network"
+  
+architecture:
+  input_dim: null  # Will be set based on data
+  hidden_layers: [128, 64, 32]
+  output_dim: 1
+  activation: "relu"
+  dropout: 0.2
+  
+training:
+  batch_size: 32
+  epochs: 100
+  learning_rate: 0.001
+  optimizer: "adam"
+  loss: "mse"
+  validation_split: 0.2
+  early_stopping:
+    patience: 10
+    monitor: "val_loss"
+    
+data:
+  features: []  # Will be populated based on dataset
+  target: "target_variable"
+  normalization: "standard"
+  
+paths:
+  model_save: "results/checkpoints/mlp_model.h5"
+  logs: "results/logs/mlp_training.log"

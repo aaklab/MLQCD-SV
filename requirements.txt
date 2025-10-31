@@ -1,0 +1,23 @@
+# Core dependencies
+numpy>=1.21.0
+pandas>=1.3.0
+scikit-learn>=1.0.0
+tensorflow>=2.8.0
+torch>=1.11.0
+matplotlib>=3.5.0
+seaborn>=0.11.0
+jupyter>=1.0.0
+
+# Additional ML libraries
+xgboost>=1.5.0
+lightgbm>=3.3.0
+optuna>=2.10.0
+
+# Data processing
+scipy>=1.7.0
+astropy>=5.0.0
+
+# Development tools
+pytest>=6.0.0
+black>=22.0.0
+flake8>=4.0.0
