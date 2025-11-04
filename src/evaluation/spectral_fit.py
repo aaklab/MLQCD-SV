@@ -1,9 +1,15 @@
-"""
-Spectral fitting utilities for astronomical data analysis.
-"""
+# Fits correlators to extract energies
+import numpy as np
+from scipy.optimize import curve_fit
 
-# TODO: Implement spectral analysis tools
-# - Spectral line fitting (Gaussian, Lorentzian, Voigt)
-# - Continuum fitting
-# - Equivalent width measurement
-# - Radial velocity analysis
+def fit_correlator(correlator_data, fit_function):
+    """Fit correlator data to extract physical quantities"""
+    pass
+
+def exponential_fit(t, A, E):
+    """Exponential fit function for correlators"""
+    return A * np.exp(-E * t)
+
+def extract_energies(correlator_data):
+    """Extract energy levels from correlator fits"""
+    pass

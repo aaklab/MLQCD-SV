@@ -1,9 +1,10 @@
-"""
-Bias correction utilities for model predictions.
-"""
+# Corrects ML predictions using small real samples
+import numpy as np
 
-# TODO: Implement bias correction methods
-# - Linear correction
-# - Polynomial correction
-# - Quantile-based correction
-# - Evaluation of correction methods
+def apply_bias_correction(ml_predictions, real_samples):
+    """Apply bias correction to ML predictions using real samples"""
+    pass
+
+def compute_correction_factor(ml_predictions, real_samples):
+    """Compute bias correction factor"""
+    pass

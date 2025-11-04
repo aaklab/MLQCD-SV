@@ -1,0 +1,13 @@
+# Base configuration with shared settings
+data:
+  raw_path: "data/raw"
+  processed_path: "data/processed"
+  
+fit_options:
+  seed: 42
+  validation_split: 0.2
+  test_split: 0.1
+  
+experiment:
+  name: "base_experiment"
+  output_dir: "results/runs"
