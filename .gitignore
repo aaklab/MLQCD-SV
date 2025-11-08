@@ -88,7 +88,8 @@ results/checkpoints/*
 *.pkl
 *.h5
 *.pt
-*.pth# Large
- data files (>100MB)
+*.pth# Large data files (>100MB)
 *.gpl
 docs/*.gpl
+data.gpl
+data/processed/*.csv

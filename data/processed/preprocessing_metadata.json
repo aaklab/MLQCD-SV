@@ -1,0 +1,40 @@
+{
+  "timestamp": "2025-11-07T13:29:11.919441",
+  "source_file": "data/raw/2pt_D_Gold_fine_ll.csv",
+  "original_shape": [
+    2212,
+    96
+  ],
+  "preprocessing_params": {
+    "t_max": 30,
+    "log_epsilon": 1e-15,
+    "normalization": "subtract_t0",
+    "test_size": 0.2,
+    "val_size": 0.1,
+    "random_state": 42
+  },
+  "truncation_stats": {
+    "mean_truncation": 29.141048824593128,
+    "min_truncation": 21,
+    "max_truncation": 30
+  },
+  "normalization_params": {
+    "method": "subtract_t0",
+    "t0_mean": -1.4066396472653582,
+    "t0_std": 0.0005679689543813498
+  },
+  "final_shapes": {
+    "train": [
+      1547,
+      31
+    ],
+    "val": [
+      222,
+      31
+    ],
+    "test": [
+      443,
+      31
+    ]
+  }
+}

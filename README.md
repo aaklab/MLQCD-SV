@@ -8,52 +8,35 @@ This project implements and compares multiple machine learning models for lattic
 ML_for_lattice_QCD/
 ├── README.md
 ├── requirements.txt
-├── .gitignore
-├── data/
-│   ├── raw/
-│   └── processed/
-├── configs/
-│   ├── base.yaml                # shared settings (data paths, fit options)
-│   ├── mlp.yaml                 # overrides specific to MLP
-│   ├── gbr.yaml                 # overrides for GBR
-│   ├── cnn.yaml                 # overrides for CNN
-│   └── transformer.yaml         # overrides for Transformer
-├── src/
-│   ├── data/
-│   │   ├── load_data.py           # reads .gpl files and returns arrays
-│   │   └── preprocess_data.py     # normalizes, splits, and saves processed data
-│   ├── models/
-│   │   ├── base_model.py          # a template class that all models follow
-│   │   ├── mlp_model.py
-│   │   ├── gbr_model.py
-│   │   ├── cnn_model.py
-│   │   ├── transformer_model.py
-│   │   └── factory.py             # picks the right model based on config
-│   ├── evaluation/
-│   │   ├── bias_correction.py     # corrects ML predictions using small real samples
-│   │   ├── spectral_fit.py        # fits correlators to extract energies
-│   │   ├── metrics.py             # computes RMSE, MAE, etc.
-│   │   └── plotting.py            # plots correlators and results
-│   ├── pipeline/
-│   │   └── run_experiment.py      # main script: loads config, trains model, saves results
-│   └── utils.py                   # seed_everything(), timestamp helpers, etc.
 ├── analysis/
-│   ├── preprocessing.ipynb        # explore and preprocess data
-│   ├── data_exploration.ipynb     # quick plots of correlators
-│   └── results_comparison.ipynb   # compare models and plot results
+│   ├── data_exploration.ipynb
+│   ├── preprocessing.ipynb
+│   └── results_comparison.ipynb
+├── configs/
+│   ├── base.yaml
+│   ├── cnn.yaml
+│   ├── gbr.yaml
+│   ├── mlp.yaml
+│   └── transformer.yaml
+├── data/
+│   ├── processed/
+│   └── raw/
+├── docs/
+│   ├── notes.md
+│   └── paper_summary.md
 ├── results/
+│   ├── checkpoints/
 │   ├── figures/
 │   ├── metrics/
-│   └── runs/                      # each experiment gets its own folder
-│       └── 2025-11-04__mlp/
-│           ├── config.yaml
-│           ├── metrics.json
-│           ├── plots/
-│           ├── artifacts/
-│           └── logs.txt
-└── docs/
-    ├── paper_summary.md
-    └── notes.md
+│   └── runs/
+└── src/
+    ├── data/
+    ├── evaluation/
+    ├── models/
+    ├── pipeline/
+    ├── preprocessing/
+    ├── training/
+    └── utils.py
 ```
 
 ## Quick Start

@@ -70,6 +70,6 @@ if __name__ == "__main__":
     # Define input/output paths
     input_file = os.path.join(base_dir, "data", "raw",
                               "alldata_plusDgoldnongold_alsoqsqmaxdata_allstreams_allqsq_unbinned_final.gpl")
-    output_folder = os.path.join(base_dir, "data", "processed")
+    output_folder = os.path.join(base_dir, "data", "raw")
 
     convert_gpl_to_csv(input_file, output_folder)
