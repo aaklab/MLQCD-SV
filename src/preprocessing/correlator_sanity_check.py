@@ -16,8 +16,9 @@ Use this script before any ML analysis to ensure data quality and usability.
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import os
 
-def analyze_correlator_data(filepath):
+def analyze_correlator_data(filepath, file_index=None, total_files=None):
     """
     Perform comprehensive sanity check on correlator data.
     
@@ -26,13 +27,21 @@ def analyze_correlator_data(filepath):
     
     Args:
         filepath (str): Path to correlator CSV file
+        file_index (int, optional): Index of current file being processed
+        total_files (int, optional): Total number of files being processed
         
     Returns:
-        tuple: (DataFrame, averaged_correlator) for further analysis if needed
+        dict: Analysis results for this file
     """
     
-    print("🔍 LATTICE QCD CORRELATOR DATA ANALYSIS")
-    print("=" * 50)
+    filename = os.path.basename(filepath)
+    header = f"🔍 LATTICE QCD CORRELATOR DATA ANALYSIS"
+    if file_index is not None and total_files is not None:
+        header += f" [{file_index}/{total_files}]"
+    
+    print(header)
+    print(f"📁 File: {filename}")
+    print("=" * 60)
     
     # Load the data
     df = pd.read_csv(filepath, header=None)
@@ -181,7 +190,6 @@ def analyze_correlator_data(filepath):
     plt.tight_layout()
     
     # Create results/plots directory if it doesn't exist
-    import os
     
     # Find project root (where results/ folder should be)
     current_dir = os.getcwd()
@@ -195,7 +203,9 @@ def analyze_correlator_data(filepath):
     plots_dir = os.path.join(project_root, 'results', 'plots')
     os.makedirs(plots_dir, exist_ok=True)
     
-    plot_path = os.path.join(plots_dir, 'correlator_analysis.png')
+    # Generate unique filename for this correlator
+    filename = os.path.basename(filepath).replace('.csv', '')
+    plot_path = os.path.join(plots_dir, f'correlator_analysis_{filename}.png')
     plt.savefig(plot_path, dpi=150, bbox_inches='tight')
     print(f"   Plot saved as '{plot_path}'")
     
@@ -224,31 +234,223 @@ def analyze_correlator_data(filepath):
     print("   • Use log-scale preprocessing for exponential decay structure")
     print("   • Consider time-translation invariance in model architecture")
     
-    return df, correlator
+    # Return analysis results as dictionary
+    results = {
+        'filename': os.path.basename(filepath),
+        'shape': df.shape,
+        'min_val': min_val,
+        'max_val': max_val,
+        'all_positive': all_positive,
+        'correlator': correlator,
+        'dataframe': df
+    }
+    
+    if 'plateau_mass' in locals():
+        results['plateau_mass'] = plateau_mass
+        results['plateau_std'] = plateau_std
+    
+    if 'snr' in locals():
+        results['snr'] = snr
+        
+    return results
 
-if __name__ == "__main__":
-    # Analyze the correlator data
+def find_data_directory():
+    """Find the data/raw directory from various possible locations."""
     import os
     
     # Try different possible paths depending on where script is run from
-    possible_paths = [
-        "../../data/raw/2pt_D_Gold_fine_ll.csv",  # From src/preprocessing/
-        "data/raw/2pt_D_Gold_fine_ll.csv",        # From project root
-        "BSc Project/MLQCD-SV/data/raw/2pt_D_Gold_fine_ll.csv"  # From parent dir
+    possible_data_dirs = [
+        "../../data/raw",  # From src/preprocessing/
+        "data/raw",        # From project root
+        "BSc Project/MLQCD-SV/data/raw"  # From parent dir
     ]
     
-    filepath = None
-    for path in possible_paths:
-        if os.path.exists(path):
-            filepath = path
-            break
+    for data_dir in possible_data_dirs:
+        if os.path.exists(data_dir):
+            return data_dir
     
-    if filepath is None:
-        print("❌ Could not find the correlator data file!")
+    return None
+
+def get_2pt_correlator_files(data_dir):
+    """Get all 2pt correlator CSV files from the data directory."""
+    import glob
+    import os
+    
+    pattern = os.path.join(data_dir, "2pt_*.csv")
+    files = glob.glob(pattern)
+    return sorted(files)  # Sort for consistent ordering
+
+def create_summary_comparison(all_results):
+    """Create a summary comparison plot of all correlators."""
+    import matplotlib.pyplot as plt
+    import os
+    
+    fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(15, 12))
+    
+    # Plot 1: All correlators overlaid (semilogy)
+    colors = ['blue', 'red', 'green', 'orange', 'purple', 'brown']
+    for i, result in enumerate(all_results):
+        correlator = result['correlator']
+        positive_mask = correlator > 0
+        t_range = np.arange(len(correlator))
+        positive_t = t_range[positive_mask]
+        positive_corr = correlator[positive_mask]
+        
+        label = result['filename'].replace('2pt_', '').replace('_fine_ll.csv', '')
+        color = colors[i % len(colors)]
+        ax1.semilogy(positive_t, positive_corr, 'o-', markersize=3, linewidth=1, 
+                    color=color, label=label, alpha=0.8)
+    
+    ax1.set_xlabel('Euclidean time t')
+    ax1.set_ylabel('C(t)')
+    ax1.set_title('All 2pt Correlators Comparison')
+    ax1.legend()
+    ax1.grid(True, alpha=0.3)
+    
+    # Plot 2: Data shapes comparison
+    filenames = [r['filename'].replace('2pt_', '').replace('_fine_ll.csv', '') for r in all_results]
+    n_configs = [r['shape'][0] for r in all_results]
+    n_times = [r['shape'][1] for r in all_results]
+    
+    x_pos = np.arange(len(filenames))
+    ax2.bar(x_pos - 0.2, n_configs, 0.4, label='Configurations', alpha=0.7)
+    ax2.bar(x_pos + 0.2, n_times, 0.4, label='Time slices', alpha=0.7)
+    ax2.set_xlabel('Dataset')
+    ax2.set_ylabel('Count')
+    ax2.set_title('Dataset Dimensions')
+    ax2.set_xticks(x_pos)
+    ax2.set_xticklabels(filenames, rotation=45, ha='right')
+    ax2.legend()
+    ax2.grid(True, alpha=0.3)
+    
+    # Plot 3: Value ranges
+    min_vals = [r['min_val'] for r in all_results]
+    max_vals = [r['max_val'] for r in all_results]
+    
+    ax3.semilogy(x_pos, max_vals, 'ro-', label='Max values', markersize=6)
+    ax3.semilogy(x_pos, np.abs(min_vals), 'bo-', label='|Min values|', markersize=6)
+    ax3.set_xlabel('Dataset')
+    ax3.set_ylabel('Value magnitude')
+    ax3.set_title('Value Ranges (Log Scale)')
+    ax3.set_xticks(x_pos)
+    ax3.set_xticklabels(filenames, rotation=45, ha='right')
+    ax3.legend()
+    ax3.grid(True, alpha=0.3)
+    
+    # Plot 4: Effective masses (if available)
+    plateau_masses = []
+    plateau_stds = []
+    labels_with_mass = []
+    
+    for result in all_results:
+        if 'plateau_mass' in result:
+            plateau_masses.append(result['plateau_mass'])
+            plateau_stds.append(result['plateau_std'])
+            labels_with_mass.append(result['filename'].replace('2pt_', '').replace('_fine_ll.csv', ''))
+    
+    if plateau_masses:
+        x_mass = np.arange(len(plateau_masses))
+        ax4.errorbar(x_mass, plateau_masses, yerr=plateau_stds, 
+                    fmt='go-', markersize=6, capsize=5)
+        ax4.set_xlabel('Dataset')
+        ax4.set_ylabel('Effective Mass')
+        ax4.set_title('Effective Mass Plateaus')
+        ax4.set_xticks(x_mass)
+        ax4.set_xticklabels(labels_with_mass, rotation=45, ha='right')
+        ax4.grid(True, alpha=0.3)
+    else:
+        ax4.text(0.5, 0.5, 'No effective mass\ndata available', 
+                ha='center', va='center', transform=ax4.transAxes)
+        ax4.set_title('Effective Mass (N/A)')
+    
+    plt.tight_layout()
+    
+    # Save summary plot
+    current_dir = os.getcwd()
+    if 'src' in current_dir:
+        project_root = os.path.dirname(os.path.dirname(current_dir)) if 'preprocessing' in current_dir else os.path.dirname(current_dir)
+    else:
+        project_root = current_dir
+    
+    plots_dir = os.path.join(project_root, 'results', 'plots')
+    os.makedirs(plots_dir, exist_ok=True)
+    
+    summary_path = os.path.join(plots_dir, 'all_2pt_correlators_summary.png')
+    plt.savefig(summary_path, dpi=150, bbox_inches='tight')
+    print(f"\n📊 Summary comparison plot saved as '{summary_path}'")
+    
+    return summary_path
+
+if __name__ == "__main__":
+    import os
+    import glob
+    
+    print("🚀 COMPREHENSIVE 2PT CORRELATOR ANALYSIS")
+    print("=" * 60)
+    
+    # Find data directory
+    data_dir = find_data_directory()
+    if data_dir is None:
+        print("❌ Could not find the data/raw directory!")
         print("   Tried paths:")
-        for path in possible_paths:
-            print(f"   - {path}")
+        print("   - ../../data/raw (from src/preprocessing/)")
+        print("   - data/raw (from project root)")
+        print("   - BSc Project/MLQCD-SV/data/raw (from parent dir)")
         exit(1)
     
-    print(f"📁 Using data file: {filepath}")
-    df, correlator = analyze_correlator_data(filepath)
+    # Get all 2pt correlator files
+    correlator_files = get_2pt_correlator_files(data_dir)
+    
+    if not correlator_files:
+        print(f"❌ No 2pt correlator files found in {data_dir}")
+        exit(1)
+    
+    print(f"📁 Found {len(correlator_files)} 2pt correlator files in {data_dir}:")
+    for i, filepath in enumerate(correlator_files, 1):
+        print(f"   {i}. {os.path.basename(filepath)}")
+    
+    print("\n" + "="*60)
+    
+    # Analyze each file
+    all_results = []
+    for i, filepath in enumerate(correlator_files, 1):
+        print(f"\n{'='*20} ANALYZING FILE {i}/{len(correlator_files)} {'='*20}")
+        try:
+            result = analyze_correlator_data(filepath, i, len(correlator_files))
+            all_results.append(result)
+            print(f"✅ Analysis completed for {os.path.basename(filepath)}")
+        except Exception as e:
+            print(f"❌ Error analyzing {os.path.basename(filepath)}: {str(e)}")
+            continue
+        
+        if i < len(correlator_files):
+            print("\n" + "-"*60)
+    
+    # Create summary comparison
+    if all_results:
+        print(f"\n{'='*20} GENERATING SUMMARY COMPARISON {'='*20}")
+        create_summary_comparison(all_results)
+        
+        # Print final summary table
+        print(f"\n📋 FINAL SUMMARY - {len(all_results)} FILES ANALYZED")
+        print("=" * 80)
+        print(f"{'Filename':<25} {'Configs':<8} {'Times':<6} {'Min Val':<12} {'Max Val':<12} {'All Pos':<8} {'Mass':<10}")
+        print("-" * 80)
+        
+        for result in all_results:
+            filename = result['filename'].replace('2pt_', '').replace('_fine_ll.csv', '')
+            configs = result['shape'][0]
+            times = result['shape'][1]
+            min_val = f"{result['min_val']:.2e}"
+            max_val = f"{result['max_val']:.2e}"
+            all_pos = "Yes" if result['all_positive'] else "No"
+            mass = f"{result['plateau_mass']:.4f}" if 'plateau_mass' in result else "N/A"
+            
+            print(f"{filename:<25} {configs:<8} {times:<6} {min_val:<12} {max_val:<12} {all_pos:<8} {mass:<10}")
+        
+        print("\n✅ All 2pt correlator files have been analyzed!")
+        print("📊 Individual plots saved for each file")
+        print("📈 Summary comparison plot created")
+        print("\n💡 Ready for ML training with comprehensive data understanding!")
+    else:
+        print("\n❌ No files were successfully analyzed!")
