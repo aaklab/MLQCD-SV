@@ -1,9 +1,11 @@
-# Byte-compiled / optimized / DLL files
+# Kiro IDE folder
+.kiro/
+
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
-
-# Distribution / packaging
+*.so
 .Python
 build/
 develop-eggs/
@@ -22,38 +24,7 @@ wheels/
 *.egg
 MANIFEST
 
-# PyInstaller
-*.manifest
-*.spec
-
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
-
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.nox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-.hypothesis/
-.pytest_cache/
-
-# Jupyter Notebook
-.ipynb_checkpoints
-
-# IPython
-profile_default/
-ipython_config.py
-
-# pyenv
-.python-version
-
-# Environments
+# Virtual environments
 .env
 .venv
 env/
@@ -65,7 +36,6 @@ venv.bak/
 # IDE
 .vscode/
 .idea/
-.kiro/
 *.swp
 *.swo
 *~
@@ -79,17 +49,11 @@ venv.bak/
 ehthumbs.db
 Thumbs.db
 
-# Project specific
-data/raw/*
-!data/raw/.gitkeep
-results/checkpoints/*
-!results/checkpoints/.gitkeep
-*.log
-*.pkl
-*.h5
-*.pt
-*.pth# Large data files (>100MB)
-*.gpl
-docs/*.gpl
-data.gpl
-data/processed/*.csv
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Data files (optional - uncomment if you don't want to track large data files)
+# *.csv
+# *.npy
+# *.h5
+# *.hdf5
