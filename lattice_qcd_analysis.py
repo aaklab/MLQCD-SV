@@ -4,13 +4,11 @@ Lattice QCD Analysis Pipeline
 
 Interactive flow:
   1) Choose dataset / experiment
-  2) Choose which model(s) to run (GBR, MLP, RIDGE, DTREE)
+  2) Choose which model(s) to run (GBR, MLP, RIDGE, DTREE, CNN, TRANSFORMER)
 
-We keep two ML "slots" in the physics/plotting code:
-  - slot 1 is stored under the key 'gbr'
-  - slot 2 is stored under the key 'mlp'
-
-But each slot can be any algorithm from AVAILABLE_MODELS.
+The pipeline now supports comparing any number of models simultaneously.
+Each selected model will be trained, evaluated, and included in all
+statistical analyses and plots.
 """
 
 import random
@@ -57,6 +55,18 @@ from experiment_io import (
     save_figures_as_png,
 )
 
+# Import integrated spectral fit analysis functions
+import sys
+from pathlib import Path
+sys.path.append(str(Path(__file__).parent / "analysis"))
+
+try:
+    from spectral_fit_integrated import generate_integrated_spectral_plots
+    SPECTRAL_FIT_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Could not import spectral fit modules: {e}")
+    SPECTRAL_FIT_AVAILABLE = False
+
 # Where to store per-experiment correlator means for Vega-style plots
 PREDICTIONS_DIR = Path(config.DATA_DIR) / "predictions"
 PREDICTIONS_DIR.mkdir(parents=True, exist_ok=True)
@@ -78,7 +88,7 @@ AVAILABLE_MODELS = ["GBR", "MLP", "RIDGE", "DTREE", "CNN", "TRANSFORMER"]
 
 def save_ensemble_correlators(experiment_label, time_values, statistics):
     """
-    Save ensemble-mean correlators (TRUTH, GBR, MLP) for one experiment.
+    Save ensemble-mean correlators (TRUTH and all selected models) for one experiment.
 
     Parameters
     ----------
@@ -87,31 +97,72 @@ def save_ensemble_correlators(experiment_label, time_values, statistics):
     time_values : array-like, shape (N_t,)
         Euclidean time coordinates.
     statistics : dict
-        Output from physics.compute_ensemble_statistics with keys "truth", "gbr", "mlp".
+        Output from physics.compute_ensemble_statistics with keys "truth" and model keys.
         Each entry has "means" (length N_t).
     """
-    mu_truth = np.asarray(statistics["truth"]["means"], dtype=float)
-    mu_gbr   = np.asarray(statistics["gbr"]["means"],   dtype=float)
-    mu_mlp   = np.asarray(statistics["mlp"]["means"],   dtype=float)
-
     t = np.asarray(time_values, dtype=float)
-
-    if not (len(t) == len(mu_truth) == len(mu_gbr) == len(mu_mlp)):
+    
+    # Start with time and truth data
+    data_dict = {
+        "t": t,
+        "truth": np.asarray(statistics["truth"]["means"], dtype=float)
+    }
+    
+    # Add all model predictions
+    for key, stats in statistics.items():
+        if key != "truth":
+            data_dict[key] = np.asarray(stats["means"], dtype=float)
+    
+    # Verify all arrays have the same length
+    lengths = [len(arr) for arr in data_dict.values()]
+    if not all(length == lengths[0] for length in lengths):
         raise ValueError(
-            "Length mismatch between time_values and ensemble means: "
-            f"len(t)={len(t)}, truth={len(mu_truth)}, gbr={len(mu_gbr)}, mlp={len(mu_mlp)}"
+            f"Length mismatch between time_values and ensemble means: {dict(zip(data_dict.keys(), lengths))}"
         )
 
-    df = pd.DataFrame({
-        "t":     t,
-        "truth": mu_truth,
-        "gbr":   mu_gbr,
-        "mlp":   mu_mlp,
-    })
-
+    df = pd.DataFrame(data_dict)
     out_path = PREDICTIONS_DIR / f"{experiment_label}_correlators.csv"
     df.to_csv(out_path, index=False)
     print(f"Saved ensemble correlators: {out_path}")
+
+
+def generate_spectral_fit_plots(experiment_label, time_values, statistics, fit_results, output_dir):
+    """
+    Generate spectral fit plots using the integrated spectral fit analysis.
+    
+    Parameters
+    ----------
+    experiment_label : str
+        The experiment identifier
+    time_values : array-like
+        Time coordinates
+    statistics : dict
+        Ensemble statistics from physics module
+    fit_results : dict
+        Spectral fit results
+    output_dir : str or Path
+        Directory to save plots
+        
+    Returns
+    -------
+    list
+        List of matplotlib figures for inclusion in PDF
+    """
+    if not SPECTRAL_FIT_AVAILABLE:
+        print("Spectral fit modules not available, skipping spectral fit plots")
+        return []
+    
+    try:
+        print(f"   Generating integrated spectral fit plots for {experiment_label}")
+        spectral_figures = generate_integrated_spectral_plots(
+            experiment_label, output_dir, time_values, statistics, fit_results
+        )
+        print(f"   Spectral fit analysis complete: {len(spectral_figures)} figures created for PDF")
+        return spectral_figures
+        
+    except Exception as e:
+        print(f"   Error in spectral fit plot generation: {e}")
+        return []
 
 
 def get_experiment_by_label(label: str):
@@ -129,9 +180,7 @@ def choose_models():
     Interactive menu to choose which models to run.
 
     Uses config.RUN_MODELS as a default suggestion, but the user can override.
-    We allow selecting more than two, but only the first two are used,
-    because the downstream physics / plotting code currently expects
-    at most two ML model slots.
+    Now supports selecting any number of models for comparison.
     """
     default = getattr(config, "RUN_MODELS", ["GBR", "MLP"])
     default = [m for m in default if m in AVAILABLE_MODELS] or ["GBR"]
@@ -140,7 +189,7 @@ def choose_models():
     for i, name in enumerate(AVAILABLE_MODELS, start=1):
         print(f"  {i}) {name}")
     print(
-        f"Press <Enter> for fist two models in list or e.g. 1,2, to compare two models: "
+        f"Press <Enter> for default models or select models to compare: "
         f"{', '.join(default)}"
     )
 
@@ -174,14 +223,6 @@ def choose_models():
         # Deduplicate while preserving AVAILABLE_MODELS ordering
         selected = [m for m in AVAILABLE_MODELS if m in chosen] or default
 
-    # Limit to at most two models (two slots in the pipeline)
-    if len(selected) > 2:
-        print(
-            f"More than two models selected ({selected}). "
-            f"Using only the first two: {selected[:2]}"
-        )
-        selected = selected[:2]
-
     print(f"Selected models: {', '.join(selected)}")
     return selected
 
@@ -189,6 +230,15 @@ def choose_models():
 def main():
     """
     Main analysis function that orchestrates the complete lattice QCD experiment.
+    
+    This function now includes integrated spectral fit analysis that automatically:
+    - Runs both simple and Vega-style spectral fit analyses
+    - Generates spectral fit plots for the current experiment
+    - Includes spectral fit plots in the final PDF output
+    - Saves individual spectral fit plots to their respective directories
+    
+    The spectral fit integration eliminates the need to run analysis_spectral_fit.py
+    and analysis_spectral_fit_vega.py separately.
     """
     print("Lattice QCD Analysis Pipeline")
     print("=" * 40)
@@ -215,10 +265,8 @@ def main():
 
             # Use default models from config without asking interactively
             default_models = getattr(config, "RUN_MODELS", ["GBR", "MLP"])
-            # Keep only available models, max 2
+            # Keep only available models
             default_models = [m for m in default_models if m in AVAILABLE_MODELS] or ["GBR"]
-            if len(default_models) > 2:
-                default_models = default_models[:2]
 
             selected_models = default_models
             print(f"   Using default models from config.RUN_MODELS: {', '.join(selected_models)}")
@@ -230,15 +278,7 @@ def main():
 
             selected_models = choose_models()
 
-        model1_name = selected_models[0]  # slot 'gbr'
-        model2_name = selected_models[1] if len(selected_models) > 1 else None  # slot 'mlp'
-
-
-        print(f"\nUsing model slot 1: {model1_name}")
-        if model2_name:
-            print(f"Using model slot 2: {model2_name}")
-        else:
-            print("Model slot 2: (none selected; will use truth as placeholder)")
+        print(f"\nSelected models for comparison: {', '.join(selected_models)}")
 
         # --------------------------------------------------------------
         # 1. Load correlator data
@@ -346,15 +386,14 @@ def main():
         print(f"   Truth data for statistics: {truth_data.shape}")
 
         # --------------------------------------------------------------
-        # 3. Train machine learning models (slots 1 and 2)
+        # 3. Train machine learning models
         # --------------------------------------------------------------
         print("\n3. Training machine learning models...")
 
-        model1 = train_model_by_name(model1_name, X_train, y_train)
-        if model2_name is not None:
-            model2 = train_model_by_name(model2_name, X_train, y_train)
-        else:
-            model2 = None
+        trained_models = {}
+        for model_name in selected_models:
+            print(f"   Training {model_name}...")
+            trained_models[model_name] = train_model_by_name(model_name, X_train, y_train)
 
         print("   Model training step complete")
 
@@ -363,28 +402,17 @@ def main():
         # --------------------------------------------------------------
         print("\n4. Computing bias-corrected estimators.")
 
-        # Slot 1 (stored under 'gbr')
-        print(f"   Computing bias-corrected predictions for {model1_name} (slot 1).")
-        model1_pred_bc, model1_pred_ud = physics.compute_bias_corrected_estimator(
-            model1, input_reshaped, target_reshaped, ud_indices, bc_indices
-        )
-
-        # Slot 2 (stored under 'mlp'); if no second model, use truth as placeholder
-        if model2 is not None:
-            print(f"   Computing bias-corrected predictions for {model2_name} (slot 2).")
-            model2_pred_bc, model2_pred_ud = physics.compute_bias_corrected_estimator(
-                model2, input_reshaped, target_reshaped, ud_indices, bc_indices
+        model_predictions_bc = {}
+        model_predictions_ud = {}
+        
+        for model_name in selected_models:
+            print(f"   Computing bias-corrected predictions for {model_name}.")
+            pred_bc, pred_ud = physics.compute_bias_corrected_estimator(
+                trained_models[model_name], input_reshaped, target_reshaped, ud_indices, bc_indices
             )
-        else:
-            print(
-                "   [SKIP] No second model selected; using truth_data as "
-                "placeholder in slot 2."
-            )
-            model2_pred_bc = truth_data.copy()
-            model2_pred_ud = truth_data.copy()
-
-        print(f"   Slot 1 BC predictions shape: {model1_pred_bc.shape}")
-        print(f"   Slot 2 BC predictions shape: {model2_pred_bc.shape}")
+            model_predictions_bc[model_name] = pred_bc
+            model_predictions_ud[model_name] = pred_ud
+            print(f"   {model_name} BC predictions shape: {pred_bc.shape}")
 
         # --------------------------------------------------------------
         # 5. Ensemble statistics
@@ -392,7 +420,7 @@ def main():
         print("\n5. Computing ensemble statistics.")
 
         statistics = physics.compute_ensemble_statistics(
-            truth_data, model1_pred_bc, model2_pred_bc
+            truth_data, model_predictions_bc
         )
 
         print(f"   Ensemble statistics computed for experiment: {experiment_label}")
@@ -401,22 +429,14 @@ def main():
         save_ensemble_correlators(experiment_label, time_values, statistics)
 
         # Map dict keys to nicer labels for printing
-        method_label_map = {
-            "truth": "TRUTH",
-            "gbr": model1_name.upper(),
-        }
-        if model2_name is not None:
-            method_label_map["mlp"] = model2_name.upper()
+        method_label_map = {"truth": "TRUTH"}
+        for model_name in selected_models:
+            method_label_map[model_name.lower()] = model_name.upper()
 
-        for method_key in ["truth", "gbr", "mlp"]:
-            if method_key not in statistics:
-                continue
-            if method_key == "mlp" and model2_name is None:
-                continue
-
+        for method_key, stats in statistics.items():
             label = method_label_map.get(method_key, method_key.upper())
-            means = statistics[method_key]["means"]
-            nts_ratios = statistics[method_key]["nts_ratios"]
+            means = stats["means"]
+            nts_ratios = stats["nts_ratios"]
 
             finite_nts = nts_ratios[np.isfinite(nts_ratios)]
             avg_nts = np.mean(finite_nts) if len(finite_nts) > 0 else np.inf
@@ -451,29 +471,24 @@ def main():
         )
         truth_train_nts[~valid_mask_train] = np.inf
 
-        # Uncorrected slot 1
-        model1_uncorr_means = np.mean(model1_pred_ud, axis=0)
-        model1_uncorr_std = np.std(model1_pred_ud, axis=0, ddof=1)
-        abs_means_model1_uncorr = np.abs(model1_uncorr_means)
-        valid_mask_model1_uncorr = abs_means_model1_uncorr > epsilon
-        model1_uncorr_nts = np.zeros_like(model1_uncorr_means)
-        model1_uncorr_nts[valid_mask_model1_uncorr] = (
-            model1_uncorr_std[valid_mask_model1_uncorr]
-            / abs_means_model1_uncorr[valid_mask_model1_uncorr]
-        )
-        model1_uncorr_nts[~valid_mask_model1_uncorr] = np.inf
-
-        # Uncorrected slot 2
-        model2_uncorr_means = np.mean(model2_pred_ud, axis=0)
-        model2_uncorr_std = np.std(model2_pred_ud, axis=0, ddof=1)
-        abs_means_model2_uncorr = np.abs(model2_uncorr_means)
-        valid_mask_model2_uncorr = abs_means_model2_uncorr > epsilon
-        model2_uncorr_nts = np.zeros_like(model2_uncorr_means)
-        model2_uncorr_nts[valid_mask_model2_uncorr] = (
-            model2_uncorr_std[valid_mask_model2_uncorr]
-            / abs_means_model2_uncorr[valid_mask_model2_uncorr]
-        )
-        model2_uncorr_nts[~valid_mask_model2_uncorr] = np.inf
+        # Uncorrected predictions for all models
+        model_uncorr_means = {}
+        model_uncorr_nts = {}
+        
+        for model_name in selected_models:
+            pred_ud = model_predictions_ud[model_name]
+            uncorr_means = np.mean(pred_ud, axis=0)
+            uncorr_std = np.std(pred_ud, axis=0, ddof=1)
+            abs_means_uncorr = np.abs(uncorr_means)
+            valid_mask_uncorr = abs_means_uncorr > epsilon
+            uncorr_nts = np.zeros_like(uncorr_means)
+            uncorr_nts[valid_mask_uncorr] = (
+                uncorr_std[valid_mask_uncorr] / abs_means_uncorr[valid_mask_uncorr]
+            )
+            uncorr_nts[~valid_mask_uncorr] = np.inf
+            
+            model_uncorr_means[model_name] = uncorr_means
+            model_uncorr_nts[model_name] = uncorr_nts
 
         print("   Extended statistics computed")
 
@@ -505,43 +520,24 @@ def main():
             }
             print(f"     Truth fit exception: {str(e)}")
 
-        # Slot 1 fit ('gbr')
-        print(f"   Fitting {model1_name} (slot 1) bias-corrected correlator.")
-        try:
-            fit_results["gbr"] = physics.fit_spectral_parameters(
-                time_values,
-                statistics["gbr"]["means"],
-                n_states=2,
-                t_min=3,
-                t_max=40,
-            )
-        except Exception as e:
-            fit_results["gbr"] = {
-                "success": False,
-                "error": f"Exception: {str(e)}",
-            }
-            print(f"     Slot 1 fit exception: {str(e)}")
-
-        # Slot 2 fit ('mlp')
-        if model2_name is not None:
-            print(
-                f"   Fitting {model2_name} (slot 2) "
-                "bias-corrected correlator."
-            )
+        # Fit all selected models
+        for model_name in selected_models:
+            model_key = model_name.lower()
+            print(f"   Fitting {model_name} bias-corrected correlator.")
             try:
-                fit_results["mlp"] = physics.fit_spectral_parameters(
+                fit_results[model_key] = physics.fit_spectral_parameters(
                     time_values,
-                    statistics["mlp"]["means"],
+                    statistics[model_key]["means"],
                     n_states=2,
                     t_min=3,
                     t_max=40,
                 )
             except Exception as e:
-                fit_results["mlp"] = {
+                fit_results[model_key] = {
                     "success": False,
                     "error": f"Exception: {str(e)}",
                 }
-                print(f"     Slot 2 fit exception: {str(e)}")
+                print(f"     {model_name} fit exception: {str(e)}")
 
         # --------------------------------------------------------------
         # 8. Plotting and saving results
@@ -560,55 +556,41 @@ def main():
             method_label_map,
         )
 
-        bias_correction_model1_fig = plotting.plot_bias_correction(
-            time_values,
-            truth_data,
-            model1_pred_bc,
-            model_label=model1_name,
-        )
+        # Generate bias correction plots for each model
+        bias_correction_figs = {}
+        for model_name in selected_models:
+            bias_correction_figs[model_name] = plotting.plot_bias_correction(
+                time_values,
+                truth_data,
+                model_predictions_bc[model_name],
+                model_label=model_name,
+            )
 
-        bias_correction_model2_fig = plotting.plot_bias_correction(
-            time_values,
-            truth_data,
-            model2_pred_bc,
-            model_label=(model2_name or "SLOT2"),
-        )
+        # Generate full correlator comparison plots for each model
+        full_correlator_figs = {}
+        for model_name in selected_models:
+            model_key = model_name.lower()
+            full_correlator_figs[model_name] = plotting.plot_full_correlator_comparison(
+                time_values,
+                statistics["truth"]["means"],
+                truth_train_means,
+                model_uncorr_means[model_name],
+                statistics[model_key]["means"],
+                model_label=model_name,
+            )
 
-        full_correlator_model1_fig = plotting.plot_full_correlator_comparison(
-            time_values,
-            statistics["truth"]["means"],
-            truth_train_means,
-            model1_uncorr_means,
-            statistics["gbr"]["means"],
-            model_label=model1_name,
-        )
-
-        full_correlator_model2_fig = plotting.plot_full_correlator_comparison(
-            time_values,
-            statistics["truth"]["means"],
-            truth_train_means,
-            model2_uncorr_means,
-            statistics["mlp"]["means"],
-            model_label=(model2_name or "SLOT2"),
-        )
-
-        full_nts_model1_fig = plotting.plot_full_nts_comparison(
-            time_values,
-            statistics["truth"]["nts_ratios"],
-            truth_train_nts,
-            model1_uncorr_nts,
-            statistics["gbr"]["nts_ratios"],
-            model_label=model1_name,
-        )
-
-        full_nts_model2_fig = plotting.plot_full_nts_comparison(
-            time_values,
-            statistics["truth"]["nts_ratios"],
-            truth_train_nts,
-            model2_uncorr_nts,
-            statistics["mlp"]["nts_ratios"],
-            model_label=(model2_name or "SLOT2"),
-        )
+        # Generate full NtS comparison plots for each model
+        full_nts_figs = {}
+        for model_name in selected_models:
+            model_key = model_name.lower()
+            full_nts_figs[model_name] = plotting.plot_full_nts_comparison(
+                time_values,
+                statistics["truth"]["nts_ratios"],
+                truth_train_nts,
+                model_uncorr_nts[model_name],
+                statistics[model_key]["nts_ratios"],
+                model_label=model_name,
+            )
 
         fit_params_fig = plotting.plot_fit_parameter_comparison(
             fit_results,
@@ -616,7 +598,13 @@ def main():
         )
 
         # Create / locate the output directory for this experiment
-        output_dir = create_experiment_output_dir(experiment_label)
+        output_dir = create_experiment_output_dir(experiment_label, selected_models)
+
+        # Generate spectral fit plots
+        print("   Generating spectral fit analysis plots...")
+        spectral_fit_figures = generate_spectral_fit_plots(
+            experiment_label, time_values, statistics, fit_results, output_dir
+        )
 
         # --- Capture the spectral-fit table as text, print it, and save to file ---
         buffer = StringIO()
@@ -635,40 +623,40 @@ def main():
 
         print(f"Saved spectral fit table to: {txt_path}")
 
-        figures = [
-            correlator_fig,
-            nts_fig,
-            bias_correction_model1_fig,
-            bias_correction_model2_fig,
-            full_correlator_model1_fig,
-            full_correlator_model2_fig,
-            full_nts_model1_fig,
-            full_nts_model2_fig,
-            fit_params_fig,
-        ]
+        # Collect all figures for saving
+        figures = [correlator_fig, nts_fig]
+        
+        # Add bias correction figures
+        for model_name in selected_models:
+            figures.append(bias_correction_figs[model_name])
+            
+        # Add full correlator figures
+        for model_name in selected_models:
+            figures.append(full_correlator_figs[model_name])
+            
+        # Add full NtS figures
+        for model_name in selected_models:
+            figures.append(full_nts_figs[model_name])
+            
+        figures.append(fit_params_fig)
+        
+        # Add spectral fit figures
+        figures.extend(spectral_fit_figures)
+        
         pdf_path = save_figures_to_timestamped_pdf(output_dir, figures)
         print(f"Saved PDF summary to: {pdf_path}")
-
-        save_figures_as_png(
-            output_dir,
-            {
-                "correlator_comparison": correlator_fig,
-                "nts_comparison": nts_fig,
-                "bias_model1": bias_correction_model1_fig,
-                "bias_model2": bias_correction_model2_fig,
-                "full_correlator_model1": full_correlator_model1_fig,
-                "full_correlator_model2": full_correlator_model2_fig,
-                "full_nts_model1": full_nts_model1_fig,
-                "full_nts_model2": full_nts_model2_fig,
-                "fit_params": fit_params_fig,
-            },
-        )
 
         print("   All plots generated and saved to:", output_dir)
         plt.show()
 
         print("\n" + "=" * 40)
         print(f"Lattice QCD Analysis Complete for experiment: {experiment_label}!")
+        print(f"Selected models: {', '.join(selected_models)}")
+        print(f"Results saved to: {output_dir}")
+        if SPECTRAL_FIT_AVAILABLE:
+            print("✓ Spectral fit analysis integrated and included in PDF")
+        else:
+            print("⚠ Spectral fit analysis not available")
         print("=" * 40)
 
         return {
@@ -677,18 +665,14 @@ def main():
             "extended_statistics": {
                 "truth_train_means": truth_train_means,
                 "truth_train_nts": truth_train_nts,
-                "model1_uncorr_means": model1_uncorr_means,
-                "model1_uncorr_nts": model1_uncorr_nts,
-                "model2_uncorr_means": model2_uncorr_means,
-                "model2_uncorr_nts": model2_uncorr_nts,
+                "model_uncorr_means": model_uncorr_means,
+                "model_uncorr_nts": model_uncorr_nts,
             },
             "fit_results": fit_results,
-            "models": {"slot1": model1, "slot2": model2},
+            "models": trained_models,
             "predictions": {
-                "slot1_bc": model1_pred_bc,
-                "slot1_ud": model1_pred_ud,
-                "slot2_bc": model2_pred_bc,
-                "slot2_ud": model2_pred_ud,
+                "bc": model_predictions_bc,
+                "ud": model_predictions_ud,
             },
             "data": {
                 "input": input_reshaped,

@@ -560,10 +560,16 @@ def print_fit_parameters_table(fit_results_dict, method_labels=None):
           f"{'dE1':<15} {'χ²/dof':<10} {'Q':<8}")
     print("-" * 80)
 
-    for method in ["truth", "gbr", "mlp"]:
-        if method not in fit_results_dict:
-            continue
+    # Process truth first, then all other methods in alphabetical order
+    methods_to_process = []
+    if "truth" in fit_results_dict:
+        methods_to_process.append("truth")
+    
+    # Add all other methods (excluding truth) in sorted order
+    other_methods = sorted([method for method in fit_results_dict.keys() if method != "truth"])
+    methods_to_process.extend(other_methods)
 
+    for method in methods_to_process:
         result = fit_results_dict[method]
         method_name = method_labels.get(method, method.upper())
 

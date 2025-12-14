@@ -133,36 +133,33 @@ def compute_bias_corrected_estimator(model, input_data, target_data, ud_indices,
 
 # Statistical Analysis Module
 
-def compute_ensemble_statistics(truth_data, gbr_pred_bc, mlp_pred_bc):
+def compute_ensemble_statistics(truth_data, model_predictions):
     """
     Compute ensemble statistics (means and NtS ratios) for the truth data
-    and the bias-corrected predictions from the GBR and MLP models.
+    and the bias-corrected predictions from multiple ML models.
 
     Parameters
     ----------
     truth_data : np.ndarray
         Array of shape (N_cfg, N_t) with the true correlators
         (one per configuration).
-    gbr_pred_bc : np.ndarray
-        Array of shape (N_cfg, N_t) with bias-corrected predictions
-        from the first model (slot 1, usually GBR).
-    mlp_pred_bc : np.ndarray
-        Array of shape (N_cfg, N_t) with bias-corrected predictions
-        from the second model (slot 2, usually MLP). If you have no
-        second model, you can pass `truth_data` again.
+    model_predictions : dict
+        Dictionary where keys are model names (e.g., 'GBR', 'MLP') and
+        values are np.ndarray of shape (N_cfg, N_t) with bias-corrected
+        predictions from each model.
 
     Returns
     -------
     dict
-        Dictionary with keys "truth", "gbr", "mlp".  Each value is a
-        dict containing:
+        Dictionary with keys "truth" and model names from model_predictions.
+        Each value is a dict containing:
             - "means": array of shape (N_t,)
             - "nts_ratios": array of shape (N_t,) with NtS = sigma / |mean|
               (infinite where |mean| is ~0)
     """
     # 1. Validate all inputs: must be 2D and same shape
-    data_arrays = [truth_data, gbr_pred_bc, mlp_pred_bc]
-    method_names = ["truth", "gbr", "mlp"]
+    data_arrays = [truth_data] + list(model_predictions.values())
+    method_names = ["truth"] + list(model_predictions.keys())
     data_prep.validate_statistical_computation_inputs(data_arrays, method_names)
 
     epsilon = 1e-15  # to avoid divide-by-zero
@@ -185,11 +182,11 @@ def compute_ensemble_statistics(truth_data, gbr_pred_bc, mlp_pred_bc):
             "nts_ratios": nts,
         }
 
-    statistics = {
-        "truth": _compute_stats(truth_data),
-        "gbr": _compute_stats(gbr_pred_bc),
-        "mlp": _compute_stats(mlp_pred_bc),
-    }
+    statistics = {"truth": _compute_stats(truth_data)}
+    
+    # Add statistics for each model
+    for model_name, pred_data in model_predictions.items():
+        statistics[model_name.lower()] = _compute_stats(pred_data)
 
     return statistics
 

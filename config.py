@@ -38,7 +38,7 @@ PRE_LOG_EPS = 1e-12
 # ------------------------------------------------------------------
 
 # When True: use only the first N configs for quick runs
-DEBUG_FAST = False
+DEBUG_FAST = True
 DEBUG_FAST_N_CONFIGS = 30
 
 # Add timestamp to output PDF

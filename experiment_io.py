@@ -331,17 +331,24 @@ def load_split_datasets():
 # New helpers for output directories and figure saving
 # ---------------------------------------------------------------------------
 
-def create_experiment_output_dir(experiment_label):
+def create_experiment_output_dir(experiment_label, selected_models=None):
     """
     Create (if needed) and return the output directory for a given experiment.
 
     Example:
-        output_dir = create_experiment_output_dir(experiment_label)
+        output_dir = create_experiment_output_dir(experiment_label, ["GBR", "MLP"])
 
     Resulting directory name:
-        results_<experiment_label>
+        results_<experiment_label>_<timestamp>_<models>
     """
-    output_dir = f"results_{experiment_label}"
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    if selected_models:
+        models_str = "_".join(sorted(selected_models))
+        output_dir = f"results_{experiment_label}_{timestamp}_{models_str}"
+    else:
+        output_dir = f"results_{experiment_label}_{timestamp}"
+    
     os.makedirs(output_dir, exist_ok=True)
     print(f"Output directory: {output_dir}")
     return output_dir
