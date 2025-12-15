@@ -86,7 +86,7 @@ BIAS_PLOT_Y_LIMITS = (-10, 10)
 # 6. Experiment definitions
 # ------------------------------------------------------------------
 
-DATA_DIR = "data/raw"
+DATA_DIR = "../data/raw"
 
 EXPERIMENTS: dict[int, dict] = {}
 _next_experiment_id = 1

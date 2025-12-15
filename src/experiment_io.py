@@ -334,22 +334,35 @@ def load_split_datasets():
 def create_experiment_output_dir(experiment_label, selected_models=None):
     """
     Create (if needed) and return the output directory for a given experiment.
+    All results are organized under a main 'results' folder in the project root.
 
     Example:
         output_dir = create_experiment_output_dir(experiment_label, ["GBR", "MLP"])
 
-    Resulting directory name:
-        results_<experiment_label>_<timestamp>_<models>
+    Resulting directory structure:
+        results/
+        └── results_<experiment_label>_<timestamp>_<models>/
     """
+    # Get the project root directory (parent of src directory)
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(script_dir)
+    
+    # Create main results directory in project root
+    main_results_dir = os.path.join(project_root, "results")
+    os.makedirs(main_results_dir, exist_ok=True)
+    
+    # Create timestamped subdirectory
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     
     if selected_models:
         models_str = "_".join(sorted(selected_models))
-        output_dir = f"results_{experiment_label}_{timestamp}_{models_str}"
+        subdir_name = f"results_{experiment_label}_{timestamp}_{models_str}"
     else:
-        output_dir = f"results_{experiment_label}_{timestamp}"
+        subdir_name = f"results_{experiment_label}_{timestamp}"
     
+    output_dir = os.path.join(main_results_dir, subdir_name)
     os.makedirs(output_dir, exist_ok=True)
+    
     print(f"Output directory: {output_dir}")
     return output_dir
 

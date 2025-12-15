@@ -139,8 +139,11 @@ def test_statistics():
 
         stats = compute_ensemble_statistics(truth, gbr, mlp)
 
-        # structural validation
-        required_blocks = ["truth", "gbr", "mlp"]
+        # structural validation - truth is always required, models are dynamic
+        required_blocks = ["truth"]
+        # Add any model keys that exist in the statistics
+        model_blocks = [k for k in stats.keys() if k != "truth"]
+        required_blocks.extend(model_blocks)
         required_fields = ["means"]          # must exist
         optional_fields = ["std_devs", "nts_ratios"]  # nice-to-have
 
@@ -188,15 +191,15 @@ def test_visualization():
         t = np.arange(n_times)
 
         truth_means = np.exp(-0.3 * t)
-        gbr_means = truth_means * (1 + 0.1 * np.random.random(n_times))
-        mlp_means = truth_means * (1 + 0.1 * np.random.random(n_times))
+        model1_means = truth_means * (1 + 0.1 * np.random.random(n_times))
+        model2_means = truth_means * (1 + 0.1 * np.random.random(n_times))
 
         truth_nts = 0.1 + 0.05 * t
-        gbr_nts = truth_nts * 0.8
-        mlp_nts = truth_nts * 0.9
+        model1_nts = truth_nts * 0.8
+        model2_nts = truth_nts * 0.9
 
-        fig_corr = plot_correlators(t, truth_means, gbr_means, mlp_means)
-        fig_nts = plot_noise_to_signal(t, truth_nts, gbr_nts, mlp_nts)
+        fig_corr = plot_correlators(t, truth_means, model1_means, model2_means, "Model1", "Model2")
+        fig_nts = plot_noise_to_signal(t, truth_nts, model1_nts, model2_nts, "Model1", "Model2")
 
         plt.close(fig_corr)
         plt.close(fig_nts)

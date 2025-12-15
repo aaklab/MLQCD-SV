@@ -266,8 +266,8 @@ def plot_correlators(
     truth_means,
     model1_means,
     model2_means,
-    model1_label="GBR",
-    model2_label="MLP",
+    model1_label="Model 1",
+    model2_label="Model 2",
 ):
     """
     Plot correlator means vs time for truth and two ML models.
@@ -299,8 +299,8 @@ def plot_noise_to_signal(
     truth_nts,
     model1_nts,
     model2_nts,
-    model1_label="GBR",
-    model2_label="MLP",
+    model1_label="Model 1",
+    model2_label="Model 2",
 ):
     """
     Plot noise-to-signal ratios vs time for truth and two ML models.

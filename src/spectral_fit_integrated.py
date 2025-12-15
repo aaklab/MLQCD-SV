@@ -381,15 +381,47 @@ def generate_integrated_spectral_plots(experiment_label, output_dir, time_values
     """
     figures = []
     
-    # Experiment configurations
+    # Experiment configurations - comprehensive list covering all available experiments
     experiment_configs = {
+        # 2-point experiments
         "K_ll_to_qsq0": (r"$K$ two-point, $q^{2}=0$", 25),
+        "K_ll_to_qsqmaxby3": (r"$K$ two-point, $q^{2}=q_{\mathrm{max}}^{2}/3$", 25),
         "K_ll_to_2qsqmaxby3": (r"$K$ two-point, $q^{2}=2q_{\mathrm{max}}^{2}/3$", 25),
+        "D_Gold_to_nongold": (r"$D$ meson, Gold to non-Gold", 25),
+        
+        # 3-point localscalar experiments
         "localscalar_T16_to_qsq0": (r"Local scalar three-point, $T=16$, $q^{2}=0$", 17),
-        "localscalar_T19_to_qsqmaxby3": (r"Local scalar three-point, $T=19$, $q^{2}=2q_{\max}^2/3$", 20),
+        "localscalar_T16_to_qsqmaxby3": (r"Local scalar three-point, $T=16$, $q^{2}=q_{\max}^2/3$", 17),
+        "localscalar_T16_to_2qsqmaxby3": (r"Local scalar three-point, $T=16$, $q^{2}=2q_{\max}^2/3$", 17),
+        
+        "localscalar_T19_to_qsq0": (r"Local scalar three-point, $T=19$, $q^{2}=0$", 20),
+        "localscalar_T19_to_qsqmaxby3": (r"Local scalar three-point, $T=19$, $q^{2}=q_{\max}^2/3$", 20),
+        "localscalar_T19_to_2qsqmaxby3": (r"Local scalar three-point, $T=19$, $q^{2}=2q_{\max}^2/3$", 20),
+        
+        "localscalar_T22_to_qsq0": (r"Local scalar three-point, $T=22$, $q^{2}=0$", 23),
+        "localscalar_T22_to_qsqmaxby3": (r"Local scalar three-point, $T=22$, $q^{2}=q_{\max}^2/3$", 23),
         "localscalar_T22_to_2qsqmaxby3": (r"Local scalar three-point, $T=22$, $q^{2}=2q_{\max}^2/3$", 23),
+        
+        "localscalar_T25_to_qsq0": (r"Local scalar three-point, $T=25$, $q^{2}=0$", 26),
+        "localscalar_T25_to_qsqmaxby3": (r"Local scalar three-point, $T=25$, $q^{2}=q_{\max}^2/3$", 26),
+        "localscalar_T25_to_2qsqmaxby3": (r"Local scalar three-point, $T=25$, $q^{2}=2q_{\max}^2/3$", 26),
+        
+        # 3-point localtempvector experiments
         "localtempvector_T16_to_qsq0": (r"Local temporal vector three-point, $T=16$, $q^{2}=0$", 17),
+        "localtempvector_T16_to_qsqmaxby3": (r"Local temporal vector three-point, $T=16$, $q^{2}=q_{\max}^2/3$", 17),
+        "localtempvector_T16_to_2qsqmaxby3": (r"Local temporal vector three-point, $T=16$, $q^{2}=2q_{\max}^2/3$", 17),
+        
+        "localtempvector_T19_to_qsq0": (r"Local temporal vector three-point, $T=19$, $q^{2}=0$", 20),
+        "localtempvector_T19_to_qsqmaxby3": (r"Local temporal vector three-point, $T=19$, $q^{2}=q_{\max}^2/3$", 20),
+        "localtempvector_T19_to_2qsqmaxby3": (r"Local temporal vector three-point, $T=19$, $q^{2}=2q_{\max}^2/3$", 20),
+        
+        "localtempvector_T22_to_qsq0": (r"Local temporal vector three-point, $T=22$, $q^{2}=0$", 23),
+        "localtempvector_T22_to_qsqmaxby3": (r"Local temporal vector three-point, $T=22$, $q^{2}=q_{\max}^2/3$", 23),
         "localtempvector_T22_to_2qsqmaxby3": (r"Local temporal vector three-point, $T=22$, $q^{2}=2q_{\max}^2/3$", 23),
+        
+        "localtempvector_T25_to_qsq0": (r"Local temporal vector three-point, $T=25$, $q^{2}=0$", 26),
+        "localtempvector_T25_to_qsqmaxby3": (r"Local temporal vector three-point, $T=25$, $q^{2}=q_{\max}^2/3$", 26),
+        "localtempvector_T25_to_2qsqmaxby3": (r"Local temporal vector three-point, $T=25$, $q^{2}=2q_{\max}^2/3$", 26),
     }
     
     if experiment_label not in experiment_configs:
@@ -672,15 +704,41 @@ def run_all_spectral_analyses():
     plots_dir = root_dir / "plots" / "spectral_fits"
     plots_dir.mkdir(parents=True, exist_ok=True)
     
-    # All available experiments
+    # All available experiments - matches the experiment_configs dictionary
     experiments = [
+        # 2-point experiments
         "K_ll_to_qsq0",
-        "K_ll_to_2qsqmaxby3", 
+        "K_ll_to_qsqmaxby3",
+        "K_ll_to_2qsqmaxby3",
+        "D_Gold_to_nongold",
+        
+        # 3-point localscalar experiments
         "localscalar_T16_to_qsq0",
+        "localscalar_T16_to_qsqmaxby3",
+        "localscalar_T16_to_2qsqmaxby3",
+        "localscalar_T19_to_qsq0",
         "localscalar_T19_to_qsqmaxby3",
+        "localscalar_T19_to_2qsqmaxby3",
+        "localscalar_T22_to_qsq0",
+        "localscalar_T22_to_qsqmaxby3",
         "localscalar_T22_to_2qsqmaxby3",
+        "localscalar_T25_to_qsq0",
+        "localscalar_T25_to_qsqmaxby3",
+        "localscalar_T25_to_2qsqmaxby3",
+        
+        # 3-point localtempvector experiments
         "localtempvector_T16_to_qsq0",
-        "localtempvector_T22_to_2qsqmaxby3"
+        "localtempvector_T16_to_qsqmaxby3",
+        "localtempvector_T16_to_2qsqmaxby3",
+        "localtempvector_T19_to_qsq0",
+        "localtempvector_T19_to_qsqmaxby3",
+        "localtempvector_T19_to_2qsqmaxby3",
+        "localtempvector_T22_to_qsq0",
+        "localtempvector_T22_to_qsqmaxby3",
+        "localtempvector_T22_to_2qsqmaxby3",
+        "localtempvector_T25_to_qsq0",
+        "localtempvector_T25_to_qsqmaxby3",
+        "localtempvector_T25_to_2qsqmaxby3",
     ]
     
     for experiment_label in experiments:

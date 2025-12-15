@@ -64,8 +64,7 @@ def _safe_relative_error(true_val, pred_val):
 
 def compute_physics_scoreboard(
     truth_data,
-    gbr_pred_bc,
-    mlp_pred_bc,
+    model_predictions_bc,
     stats=None,
     t_min=3,
     t_max=40,

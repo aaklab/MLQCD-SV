@@ -30,8 +30,8 @@ import os
 from pathlib import Path
 import os   # (if not already imported)
 
-# Base directory of the project (folder where this script lives)
-BASE_DIR = Path(__file__).resolve().parent
+# Base directory of the project (parent of the folder where this script lives)
+BASE_DIR = Path(__file__).resolve().parent.parent
 
 # Data directory inside the project
 DATA_DIR = BASE_DIR / "data" / "raw"
@@ -56,10 +56,6 @@ from experiment_io import (
 )
 
 # Import integrated spectral fit analysis functions
-import sys
-from pathlib import Path
-sys.path.append(str(Path(__file__).parent / "analysis"))
-
 try:
     from spectral_fit_integrated import generate_integrated_spectral_plots
     SPECTRAL_FIT_AVAILABLE = True
@@ -162,6 +158,8 @@ def generate_spectral_fit_plots(experiment_label, time_values, statistics, fit_r
         
     except Exception as e:
         print(f"   Error in spectral fit plot generation: {e}")
+        import traceback
+        traceback.print_exc()
         return []
 
 
