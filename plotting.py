@@ -19,7 +19,7 @@ def export_correlator_means_to_csv(channel_stem, time_values, statistics, out_di
     """
     Export ensemble-mean correlators for Vega-style spectral plots.
 
-    Writes CSV with columns: t, truth, gbr, mlp
+    Writes CSV with columns: t, truth, and all available model predictions
     Filename: <channel_stem>_correlators.csv
     """
     if out_dir is None:
@@ -32,8 +32,10 @@ def export_correlator_means_to_csv(channel_stem, time_values, statistics, out_di
     t = np.asarray(time_values, dtype=float)
 
     data = {"t": t}
-    for key in ["truth", "gbr", "mlp"]:
-        if key in statistics and "means" in statistics[key]:
+    
+    # Add all available statistics with means
+    for key in statistics:
+        if "means" in statistics[key]:
             data[key] = np.asarray(statistics[key]["means"], dtype=float)
 
     df = pd.DataFrame(data)
@@ -45,8 +47,7 @@ def export_correlator_means_to_csv(channel_stem, time_values, statistics, out_di
 
 def plot_correlator_comparison(time_values, statistics, method_label_map):
     """
-    Plot a comparison of correlator means for the truth data and the
-    two ML models (slot 1 = 'gbr', slot 2 = 'mlp').
+    Plot a comparison of correlator means for the truth data and all ML models.
 
     Parameters
     ----------
@@ -54,12 +55,12 @@ def plot_correlator_comparison(time_values, statistics, method_label_map):
         Time slices t.
     statistics : dict
         Output of physics.compute_ensemble_statistics, with keys
-        "truth", "gbr", "mlp", each containing:
+        "truth" and model keys (e.g., "gbr", "mlp", "cnn", etc.), each containing:
             - "means": array (N_t,)
             - "nts_ratios": array (N_t,)
     method_label_map : dict
-        Maps method keys ("truth", "gbr", "mlp") to nice labels for
-        the legend (e.g. {"truth": "TRUTH", "gbr": "GBR", "mlp": "MLP"}).
+        Maps method keys to nice labels for the legend 
+        (e.g. {"truth": "TRUTH", "gbr": "GBR", "mlp": "MLP"}).
 
     Returns
     -------
@@ -68,14 +69,18 @@ def plot_correlator_comparison(time_values, statistics, method_label_map):
     """
     fig, ax = plt.subplots()
 
-    # Order we want to show in the legend
-    method_order = ["truth", "gbr", "mlp"]
+    # Always plot truth first, then all other methods in sorted order
+    method_order = []
+    if "truth" in statistics:
+        method_order.append("truth")
+    
+    # Add all other methods (excluding truth) in sorted order
+    other_methods = sorted([key for key in statistics.keys() if key != "truth"])
+    method_order.extend(other_methods)
 
     for key in method_order:
         if key not in statistics:
             continue
-        # If there is no second model selected, "mlp" may be present
-        # but just a copy of truth; main() already handles that.
         means = statistics[key]["means"]
         label = method_label_map.get(key, key.upper())
 
@@ -95,17 +100,17 @@ def plot_correlator_comparison(time_values, statistics, method_label_map):
 
 def plot_nts_comparison(time_values, statistics, method_label_map):
     """
-    Plot a comparison of noise-to-signal (NtS) ratios for truth and models.
+    Plot a comparison of noise-to-signal (NtS) ratios for truth and all models.
 
     Parameters
     ----------
     time_values : array-like, shape (N_t,)
         Time slices.
     statistics : dict
-        Output from compute_ensemble_statistics with keys "truth", "gbr", "mlp".
+        Output from compute_ensemble_statistics with keys "truth" and model keys.
         Each entry is a dict with key "nts_ratios".
     method_label_map : dict
-        Maps method keys ("truth", "gbr", "mlp") to human-readable labels.
+        Maps method keys to human-readable labels.
 
     Returns
     -------
@@ -113,7 +118,15 @@ def plot_nts_comparison(time_values, statistics, method_label_map):
     """
     fig, ax = plt.subplots()
 
-    method_order = ["truth", "gbr", "mlp"]
+    # Always plot truth first, then all other methods in sorted order
+    method_order = []
+    if "truth" in statistics:
+        method_order.append("truth")
+    
+    # Add all other methods (excluding truth) in sorted order
+    other_methods = sorted([key for key in statistics.keys() if key != "truth"])
+    method_order.extend(other_methods)
+
     for key in method_order:
         if key not in statistics:
             continue
@@ -450,8 +463,7 @@ def plot_fit_parameter_comparison(fit_results_dict, method_labels=None):
     """
     Bar/point comparison of fit parameters (a0, a1, dE0, dE1) for each method.
 
-    method_labels: optional dict mapping method keys ('truth','gbr','mlp')
-    to display names.
+    method_labels: optional dict mapping method keys to display names.
     """
     if method_labels is None:
         method_labels = {}
@@ -459,8 +471,13 @@ def plot_fit_parameter_comparison(fit_results_dict, method_labels=None):
     parameters = ["a0", "a1", "dE0", "dE1"]
     param_labels = ["$a_0$", "$a_1$", r"$\Delta E_0$", r"$\Delta E_1$"]
 
-    methods_all = ["truth", "gbr", "mlp"]
-    methods = [m for m in methods_all if m in fit_results_dict]
+    # Use all methods present in fit_results_dict, with truth first if present
+    methods = []
+    if "truth" in fit_results_dict:
+        methods.append("truth")
+    # Add all other methods in sorted order
+    other_methods = sorted([m for m in fit_results_dict.keys() if m != "truth"])
+    methods.extend(other_methods)
 
     n_params = len(parameters)
     fig, axes = plt.subplots(1, n_params, figsize=(4 * n_params, 5), sharey=False)
@@ -547,8 +564,8 @@ def print_fit_parameters_table(fit_results_dict, method_labels=None):
     """
     Print a formatted table of fit parameters (a0, a1, dE0, dE1, χ²/dof, Q).
 
-    method_labels: optional dict mapping method keys ('truth','gbr','mlp')
-    to display names (e.g. {'gbr': 'RIDGE', 'mlp': 'DTREE'}).
+    method_labels: optional dict mapping method keys to display names 
+    (e.g. {'gbr': 'GBR', 'mlp': 'MLP', 'cnn': 'CNN'}).
     """
     if method_labels is None:
         method_labels = {}
