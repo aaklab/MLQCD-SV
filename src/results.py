@@ -22,6 +22,7 @@ Dependencies:
 """
 
 import numpy as np
+import config
 from physics import (
     compute_ensemble_statistics,
     fit_spectral_parameters
@@ -66,8 +67,8 @@ def compute_physics_scoreboard(
     truth_data,
     model_predictions_bc,
     stats=None,
-    t_min=3,
-    t_max=40,
+    t_min=None,
+    t_max=None,
     n_states=2,
     T=96,
     print_table=True,
@@ -79,6 +80,12 @@ def compute_physics_scoreboard(
     If `stats` is provided, reuse those precomputed ensemble statistics.
     Otherwise compute them internally.
     """
+
+    # Use config defaults if not specified
+    if t_min is None:
+        t_min = config.TAU_MIN
+    if t_max is None:
+        t_max = config.TAU_MAX
 
     # Reuse or compute ensemble statistics
     if stats is None:

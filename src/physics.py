@@ -162,7 +162,7 @@ def compute_ensemble_statistics(truth_data, model_predictions):
     method_names = ["truth"] + list(model_predictions.keys())
     data_prep.validate_statistical_computation_inputs(data_arrays, method_names)
 
-    epsilon = 1e-15  # to avoid divide-by-zero
+    epsilon = config.TRUTH_MAGNITUDE_THRESHOLD  # to avoid divide-by-zero
 
     def _compute_stats(data):
         """
@@ -189,6 +189,86 @@ def compute_ensemble_statistics(truth_data, model_predictions):
         statistics[model_name.lower()] = _compute_stats(pred_data)
 
     return statistics
+
+
+# Ratio Method + ML Module
+
+def create_ratio_method_splits(n_configs, hp_fraction=None, lp_fraction=None, random_seed=None):
+    """
+    Create S_HP and S_LP configuration index sets for Ratio Method + ML.
+    
+    Args:
+        n_configs: Total number of configurations
+        hp_fraction: Fraction of configs for S_HP (high precision set)
+        lp_fraction: Fraction of configs for S_LP (low precision set)  
+        random_seed: Random seed for reproducible splits
+        
+    Returns:
+        S_HP: Array of configuration indices for high precision set
+        S_LP: Array of configuration indices for low precision set
+    """
+    import numpy as np
+    
+    # Use config defaults if not specified
+    if hp_fraction is None:
+        hp_fraction = getattr(config, 'RATIO_METHOD_S_HP_FRACTION', 0.8)
+    if lp_fraction is None:
+        lp_fraction = getattr(config, 'RATIO_METHOD_S_LP_FRACTION', 0.2)
+    if random_seed is None:
+        random_seed = getattr(config, 'RANDOM_SEED', 42)
+        
+    # Validate fractions
+    if hp_fraction + lp_fraction > 1.0:
+        raise ValueError(f"HP fraction ({hp_fraction}) + LP fraction ({lp_fraction}) > 1.0")
+        
+    # Create reproducible random split
+    np.random.seed(random_seed)
+    all_indices = np.arange(n_configs)
+    np.random.shuffle(all_indices)
+    
+    # Split indices
+    n_hp = int(n_configs * hp_fraction)
+    n_lp = int(n_configs * lp_fraction)
+    
+    S_HP = all_indices[:n_hp]
+    S_LP = all_indices[n_hp:n_hp + n_lp]
+    
+    print(f"Ratio Method splits: S_HP={len(S_HP)} configs, S_LP={len(S_LP)} configs")
+    
+    return S_HP, S_LP
+
+
+def ratio_method_plus_ml(O1_truth, O1_pred, O2_pred, S_HP, S_LP, alpha=None, eps=None):
+    """
+    Implements Vega Eq.(7) (RM+ML / bRM+ML if alpha != 1).
+    All arrays are shape (n_configs, n_tau). Returns shape (n_tau,).
+    
+    Args:
+        O1_truth: "easy/available" correlator (known on many/all configs)
+        O1_pred: ML predictions for O1
+        O2_pred: ML predictions for O2 (target correlator)
+        S_HP: large set where you trust O1_truth
+        S_LP: small set where you only use predictions in the RM+ML formula
+        alpha: blending parameter (1.0 = RM+ML, other values = bRM+ML)
+        eps: small value to avoid divide-by-zero
+        
+    Returns:
+        C_tau: ensemble-mean correlator as function of tau
+    """
+    import numpy as np
+    
+    # Use config defaults if not specified
+    if alpha is None:
+        alpha = getattr(config, 'RATIO_METHOD_ALPHA', 1.0)
+    if eps is None:
+        eps = getattr(config, 'RATIO_METHOD_EPS', 1e-12)
+    
+    mu1_HP = O1_truth[S_HP].mean(axis=0)      # <O1>_HP
+    mu2p_LP = O2_pred[S_LP].mean(axis=0)      # <O2_pred>_LP  
+    mu1p_LP = O1_pred[S_LP].mean(axis=0)      # <O1_pred>_LP
+    
+    denom = np.maximum(np.abs(mu1p_LP), eps) * np.sign(mu1p_LP)  # avoid divide-by-zero
+    return (mu1_HP ** alpha) * (mu2p_LP / (denom ** alpha))
 
 
 # Spectral Fitting Module
@@ -232,8 +312,8 @@ def fit_spectral_parameters(time_values,
                             correlator_mean,
                             correlator_cov=None,
                             n_states=2,
-                            t_min=3,
-                            t_max=40,
+                            t_min=None,
+                            t_max=None,
                             T=96):
     """
     Perform multi-exponential fits for correlator data using scipy.optimize.curve_fit.
@@ -244,14 +324,20 @@ def fit_spectral_parameters(time_values,
         correlator_mean (array): Ensemble-average correlator (1D)
         correlator_cov (array): Covariance matrix or diagonal variances (optional)
         n_states (int): Number of states to fit (default: 2)
-        t_min (int): Minimum time for fitting (default: 3)
-        t_max (int): Maximum time for fitting (default: 40)
+        t_min (int): Minimum time for fitting (default: config.TAU_MIN)
+        t_max (int): Maximum time for fitting (default: config.TAU_MAX)
         T (int): Temporal extent of the lattice (default: 96)
 
     Returns:
         dict: Fit results with parameters, errors, chi2/dof, etc.
     """
     from scipy.optimize import curve_fit
+
+    # Use config defaults if not specified
+    if t_min is None:
+        t_min = config.TAU_MIN
+    if t_max is None:
+        t_max = config.TAU_MAX
 
     # ---- Basic shape checks & alignment ----
     correlator_mean = np.asarray(correlator_mean)

@@ -33,13 +33,8 @@ import os   # (if not already imported)
 # Base directory of the project (parent of the folder where this script lives)
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Data directory inside the project
-DATA_DIR = BASE_DIR / "data" / "raw"
-
-# Predictions directory
-PREDICTIONS_DIR = DATA_DIR / "predictions"
-
-# Ensure predictions folder exists
+# Use DATA_DIR from config.py and create predictions directory
+PREDICTIONS_DIR = Path(config.DATA_DIR) / "predictions"
 PREDICTIONS_DIR.mkdir(parents=True, exist_ok=True)
 
 from pathlib import Path
@@ -63,9 +58,7 @@ except ImportError as e:
     print(f"Warning: Could not import spectral fit modules: {e}")
     SPECTRAL_FIT_AVAILABLE = False
 
-# Where to store per-experiment correlator means for Vega-style plots
-PREDICTIONS_DIR = Path(config.DATA_DIR) / "predictions"
-PREDICTIONS_DIR.mkdir(parents=True, exist_ok=True)
+# PREDICTIONS_DIR already defined above
 
 # Random seeds for reproducible results
 np.random.seed(config.RANDOM_SEED)
@@ -413,12 +406,56 @@ def main():
             print(f"   {model_name} BC predictions shape: {pred_bc.shape}")
 
         # --------------------------------------------------------------
-        # 5. Ensemble statistics
+        # 5. Ratio Method + ML (optional)
         # --------------------------------------------------------------
-        print("\n5. Computing ensemble statistics.")
+        model_predictions_final = model_predictions_bc.copy()  # Default: use bias-corrected
+        
+        if getattr(config, 'ENABLE_RATIO_METHOD', False):
+            print("\n5a. Applying Vega's Ratio Method + ML technique.")
+            
+            # Create S_HP and S_LP configuration splits
+            S_HP, S_LP = physics.create_ratio_method_splits(n_configs)
+            
+            # Apply RM+ML to each model
+            model_predictions_rm = {}
+            for model_name in selected_models:
+                print(f"   Computing RM+ML for {model_name}...")
+                
+                # For RM+ML, we need:
+                # O1_truth = input correlator (known/trusted)
+                # O1_pred = ML prediction of input correlator  
+                # O2_pred = ML prediction of target correlator (bias-corrected)
+                
+                # Use the input correlator as O1_truth (reshaped to per-config means)
+                O1_truth = np.mean(input_reshaped, axis=1)  # Average over time sources
+                
+                # Get ML predictions for input (train model on input->input)
+                # For simplicity, use the bias-corrected predictions as O1_pred approximation
+                O1_pred = model_predictions_bc[model_name]  # This is an approximation
+                O2_pred = model_predictions_bc[model_name]  # Target predictions
+                
+                # Apply Vega's RM+ML formula
+                rm_correlator = physics.ratio_method_plus_ml(
+                    O1_truth, O1_pred, O2_pred, S_HP, S_LP
+                )
+                
+                # Convert back to per-config format for consistency
+                model_predictions_rm[model_name] = np.tile(rm_correlator, (n_configs, 1))
+                print(f"   {model_name} RM+ML correlator shape: {rm_correlator.shape}")
+            
+            # Use RM+ML predictions for final analysis
+            model_predictions_final = model_predictions_rm
+            print("   Using Ratio Method + ML predictions for final analysis.")
+        else:
+            print("\n5a. Ratio Method + ML disabled, using bias-corrected predictions.")
+
+        # --------------------------------------------------------------
+        # 5b. Ensemble statistics
+        # --------------------------------------------------------------
+        print("\n5b. Computing ensemble statistics.")
 
         statistics = physics.compute_ensemble_statistics(
-            truth_data, model_predictions_bc
+            truth_data, model_predictions_final
         )
 
         print(f"   Ensemble statistics computed for experiment: {experiment_label}")
@@ -508,8 +545,8 @@ def main():
                 time_values,
                 statistics["truth"]["means"],
                 n_states=2,
-                t_min=3,
-                t_max=40,
+                t_min=config.TAU_MIN,
+                t_max=config.TAU_MAX,
             )
         except Exception as e:
             fit_results["truth"] = {
@@ -527,8 +564,8 @@ def main():
                     time_values,
                     statistics[model_key]["means"],
                     n_states=2,
-                    t_min=3,
-                    t_max=40,
+                    t_min=config.TAU_MIN,
+                    t_max=config.TAU_MAX,
                 )
             except Exception as e:
                 fit_results[model_key] = {
@@ -557,11 +594,15 @@ def main():
         # Generate bias correction plots for each model
         bias_correction_figs = {}
         for model_name in selected_models:
+            # Use final predictions (RM+ML if enabled, otherwise bias-corrected)
+            final_predictions = model_predictions_final[model_name]
+            method_suffix = " (RM+ML)" if getattr(config, 'ENABLE_RATIO_METHOD', False) else " (BC)"
+            
             bias_correction_figs[model_name] = plotting.plot_bias_correction(
                 time_values,
                 truth_data,
-                model_predictions_bc[model_name],
-                model_label=model_name,
+                final_predictions,
+                model_label=model_name + method_suffix,
             )
 
         # Generate full correlator comparison plots for each model

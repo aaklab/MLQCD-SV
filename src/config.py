@@ -77,16 +77,37 @@ UD_SOURCE = [3]
 # 5. Bias-correction and plotting constants
 # ------------------------------------------------------------------
 
-TAU_MIN = 5
-TAU_MAX = 60
-TRUTH_MAGNITUDE_THRESHOLD = 1e-7
+TAU_MIN = 3
+TAU_MAX = 40
+TRUTH_MAGNITUDE_THRESHOLD = 1e-15
 BIAS_PLOT_Y_LIMITS = (-10, 10)
+
+# ------------------------------------------------------------------
+# 6. Ratio Method + ML configuration
+# ------------------------------------------------------------------
+
+# Enable Vega's Ratio Method + ML technique
+ENABLE_RATIO_METHOD = False
+
+# Blending parameter: 1.0 = RM+ML, other values = bRM+ML
+RATIO_METHOD_ALPHA = 1.0
+
+# Small value to avoid divide-by-zero in ratio calculation
+RATIO_METHOD_EPS = 1e-12
+
+# Configuration split for RM+ML (indices or fractions)
+# S_HP: large set where O1_truth is trusted (high precision)
+# S_LP: small set where only predictions are used (low precision)
+RATIO_METHOD_S_HP_FRACTION = 0.8  # Use 80% of configs for S_HP
+RATIO_METHOD_S_LP_FRACTION = 0.2  # Use 20% of configs for S_LP
 
 # ------------------------------------------------------------------
 # 6. Experiment definitions
 # ------------------------------------------------------------------
 
-DATA_DIR = "../data/raw"
+from pathlib import Path
+
+DATA_DIR = Path("../data/raw")
 
 EXPERIMENTS: dict[int, dict] = {}
 _next_experiment_id = 1
@@ -96,8 +117,8 @@ def _add_experiment(label: str, exp_type: str, input_file: str, target_file: str
     EXPERIMENTS[_next_experiment_id] = {
         "label": label,
         "type": exp_type,
-        "input_file": os.path.join(DATA_DIR, input_file),
-        "target_file": os.path.join(DATA_DIR, target_file),
+        "input_file": str(DATA_DIR / input_file),
+        "target_file": str(DATA_DIR / target_file),
     }
     _next_experiment_id += 1
 
