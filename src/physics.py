@@ -703,3 +703,248 @@ def fit_spectral_parameters_bayesian(time_values,
             "error": f"Bayesian fit failed: {str(e)}",
         }
 
+
+def compute_bias_correction_effect_data(truth_data, model_predictions_uncorrected, model_predictions_corrected):
+    """
+    Compute ensemble-averaged relative correlated difference R(t) to show the effect of bias correction.
+    
+    This generates the data needed for the Vega paper plot showing "Rel. correlated diff." vs "Time extent".
+    
+    The formula is: R(t) = (C^pred(t) - C^true(t)) / C^true(t)
+    
+    Parameters
+    ----------
+    truth_data : array, shape (n_configs, n_times)
+        True correlator data (ensemble of configurations)
+    model_predictions_uncorrected : array, shape (n_configs, n_times)  
+        ML predictions without bias correction (from UD source)
+    model_predictions_corrected : array, shape (n_configs, n_times)
+        ML predictions with bias correction applied
+        
+    Returns
+    -------
+    dict
+        Dictionary containing:
+        - 'uncorrected_R': R(t) for bias-uncorrected predictions
+        - 'corrected_R': R(t) for bias-corrected predictions  
+        - 'time_values': time coordinates
+        - 'improvement': corrected_R - uncorrected_R (negative = improvement)
+    """
+    import numpy as np
+    
+    # Ensure all inputs are numpy arrays
+    truth_data = np.asarray(truth_data)
+    model_predictions_uncorrected = np.asarray(model_predictions_uncorrected)
+    model_predictions_corrected = np.asarray(model_predictions_corrected)
+    
+    # Validate shapes
+    if truth_data.shape != model_predictions_uncorrected.shape:
+        raise ValueError(f"Shape mismatch: truth_data {truth_data.shape} vs uncorrected {model_predictions_uncorrected.shape}")
+    
+    if truth_data.shape != model_predictions_corrected.shape:
+        raise ValueError(f"Shape mismatch: truth_data {truth_data.shape} vs corrected {model_predictions_corrected.shape}")
+    
+    # Compute ensemble averages
+    truth_ensemble_avg = np.mean(truth_data, axis=0)  # Shape: (n_times,)
+    uncorrected_ensemble_avg = np.mean(model_predictions_uncorrected, axis=0)
+    corrected_ensemble_avg = np.mean(model_predictions_corrected, axis=0)
+    
+    # Avoid division by zero - use small epsilon where truth is near zero
+    epsilon = config.TRUTH_MAGNITUDE_THRESHOLD
+    truth_safe = np.where(np.abs(truth_ensemble_avg) > epsilon, 
+                         truth_ensemble_avg, 
+                         np.sign(truth_ensemble_avg) * epsilon)
+    
+    # Compute relative differences R(t) = (C^pred(t) - C^true(t)) / C^true(t)
+    uncorrected_R = (uncorrected_ensemble_avg - truth_ensemble_avg) / truth_safe
+    corrected_R = (corrected_ensemble_avg - truth_ensemble_avg) / truth_safe
+    
+    # Time coordinates
+    time_values = np.arange(len(truth_ensemble_avg))
+    
+    # Improvement metric (negative values indicate bias correction helped)
+    improvement = corrected_R - uncorrected_R
+    
+    return {
+        'uncorrected_R': uncorrected_R,
+        'corrected_R': corrected_R,
+        'time_values': time_values,
+        'improvement': improvement,
+        'truth_ensemble_avg': truth_ensemble_avg,
+        'uncorrected_ensemble_avg': uncorrected_ensemble_avg,
+        'corrected_ensemble_avg': corrected_ensemble_avg
+    }
+
+
+def compute_bias_correction_effect_all_models(truth_data, model_predictions_uncorrected, model_predictions_corrected):
+    """
+    Compute bias correction effect data for all models simultaneously.
+    
+    Parameters
+    ----------
+    truth_data : array, shape (n_configs, n_times)
+        True correlator data
+    model_predictions_uncorrected : dict
+        Dictionary with model names as keys, uncorrected predictions as values
+    model_predictions_corrected : dict  
+        Dictionary with model names as keys, bias-corrected predictions as values
+        
+    Returns
+    -------
+    dict
+        Dictionary with model names as keys, each containing bias correction effect data
+    """
+    results = {}
+    
+    for model_name in model_predictions_uncorrected.keys():
+        if model_name in model_predictions_corrected:
+            try:
+                results[model_name] = compute_bias_correction_effect_data(
+                    truth_data,
+                    model_predictions_uncorrected[model_name],
+                    model_predictions_corrected[model_name]
+                )
+            except Exception as e:
+                print(f"Warning: Could not compute bias correction effect for {model_name}: {e}")
+                results[model_name] = None
+    
+    return results
+
+
+# Effective Mass Analysis Module
+
+def compute_effective_mass(correlator_data, method='jackknife', n_bootstrap=1000):
+    """
+    Compute effective mass aE_eff(t) = ln(C̄(t) / C̄(t+1)) with proper error propagation.
+    
+    Parameters
+    ----------
+    correlator_data : array, shape (n_configs, n_times)
+        Correlator data for all configurations
+    method : str, default 'jackknife'
+        Error estimation method: 'jackknife' or 'bootstrap'
+    n_bootstrap : int, default 1000
+        Number of bootstrap samples (if method='bootstrap')
+        
+    Returns
+    -------
+    dict
+        Dictionary containing:
+        - 'effective_mass_mean': array of shape (n_times-1,) with E_eff means
+        - 'effective_mass_error': array of shape (n_times-1,) with E_eff errors
+        - 'time_mid': array of shape (n_times-1,) with mid-point times t+0.5
+        - 'valid_mask': boolean array indicating valid (finite) effective mass points
+    """
+    import numpy as np
+    
+    correlator_data = np.asarray(correlator_data)
+    if correlator_data.ndim != 2:
+        raise ValueError(f"correlator_data must be 2D (n_configs, n_times), got shape {correlator_data.shape}")
+    
+    n_configs, n_times = correlator_data.shape
+    
+    # Effective mass calculation: aE_eff(t) = ln(C(t) / C(t+1))
+    # Output length will be n_times - 1
+    n_eff_times = n_times - 1
+    
+    def calculate_effective_mass_single(data):
+        """Calculate effective mass for a single correlator time series"""
+        # Avoid division by zero and log of negative numbers
+        C_t = data[:-1]  # C(t) for t = 0, 1, ..., n_times-2
+        C_t_plus_1 = data[1:]  # C(t+1) for t = 0, 1, ..., n_times-2
+        
+        # Only compute where both C(t) and C(t+1) are positive and finite
+        valid = (C_t > 0) & (C_t_plus_1 > 0) & np.isfinite(C_t) & np.isfinite(C_t_plus_1)
+        
+        eff_mass = np.full(n_eff_times, np.nan)
+        eff_mass[valid] = np.log(C_t[valid] / C_t_plus_1[valid])
+        
+        return eff_mass
+    
+    if method == 'jackknife':
+        # Jackknife resampling for error estimation
+        all_eff_masses = []
+        
+        # Calculate effective mass for each jackknife sample (leave-one-out)
+        for i in range(n_configs):
+            # Create jackknife sample (all configs except i-th)
+            jackknife_sample = np.delete(correlator_data, i, axis=0)
+            jackknife_mean = np.mean(jackknife_sample, axis=0)
+            eff_mass_jk = calculate_effective_mass_single(jackknife_mean)
+            all_eff_masses.append(eff_mass_jk)
+        
+        all_eff_masses = np.array(all_eff_masses)  # Shape: (n_configs, n_eff_times)
+        
+        # Jackknife mean and error
+        eff_mass_mean = np.mean(all_eff_masses, axis=0)
+        
+        # Jackknife error with correction factor N_corr = N_cfg for jackknife
+        eff_mass_var = np.var(all_eff_masses, axis=0, ddof=0) * (n_configs - 1)
+        eff_mass_error = np.sqrt(eff_mass_var)
+        
+    elif method == 'bootstrap':
+        # Bootstrap resampling for error estimation
+        np.random.seed(config.RANDOM_SEED)
+        all_eff_masses = []
+        
+        for _ in range(n_bootstrap):
+            # Create bootstrap sample (sample with replacement)
+            bootstrap_indices = np.random.choice(n_configs, size=n_configs, replace=True)
+            bootstrap_sample = correlator_data[bootstrap_indices]
+            bootstrap_mean = np.mean(bootstrap_sample, axis=0)
+            eff_mass_bs = calculate_effective_mass_single(bootstrap_mean)
+            all_eff_masses.append(eff_mass_bs)
+        
+        all_eff_masses = np.array(all_eff_masses)  # Shape: (n_bootstrap, n_eff_times)
+        
+        # Bootstrap mean and error
+        eff_mass_mean = np.mean(all_eff_masses, axis=0)
+        eff_mass_error = np.std(all_eff_masses, axis=0, ddof=1)
+        
+    else:
+        raise ValueError(f"Unknown method '{method}'. Use 'jackknife' or 'bootstrap'.")
+    
+    # Time coordinates at mid-points: t_mid = t + 0.5
+    time_mid = np.arange(n_eff_times) + 0.5
+    
+    # Valid mask: points where effective mass is finite
+    valid_mask = np.isfinite(eff_mass_mean) & np.isfinite(eff_mass_error)
+    
+    return {
+        'effective_mass_mean': eff_mass_mean,
+        'effective_mass_error': eff_mass_error,
+        'time_mid': time_mid,
+        'valid_mask': valid_mask,
+        'method': method,
+        'n_samples': n_configs if method == 'jackknife' else n_bootstrap
+    }
+
+
+def compute_effective_mass_all_models(truth_data, model_predictions, method='jackknife'):
+    """
+    Compute effective mass for truth data and all model predictions.
+    
+    Parameters
+    ----------
+    truth_data : array, shape (n_configs, n_times)
+        True correlator data
+    model_predictions : dict
+        Dictionary with model names as keys, prediction arrays as values
+    method : str, default 'jackknife'
+        Error estimation method
+        
+    Returns
+    -------
+    dict
+        Dictionary with 'truth' and model names as keys, effective mass results as values
+    """
+    results = {'truth': compute_effective_mass(truth_data, method=method)}
+    
+    for model_name, pred_data in model_predictions.items():
+        try:
+            results[model_name] = compute_effective_mass(pred_data, method=method)
+        except Exception as e:
+            print(f"Warning: Could not compute effective mass for {model_name}: {e}")
+            results[model_name] = None
+    
+    return results

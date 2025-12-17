@@ -406,6 +406,17 @@ def main():
             print(f"   {model_name} BC predictions shape: {pred_bc.shape}")
 
         # --------------------------------------------------------------
+        # 4b. Compute bias correction effect data (for Vega-style plots)
+        # --------------------------------------------------------------
+        print("\n4b. Computing bias correction effect data.")
+        
+        bias_correction_effect_results = physics.compute_bias_correction_effect_all_models(
+            truth_data, model_predictions_ud, model_predictions_bc
+        )
+        
+        print(f"   Bias correction effect computed for {len(bias_correction_effect_results)} models")
+
+        # --------------------------------------------------------------
         # 5. Ratio Method + ML (optional)
         # --------------------------------------------------------------
         model_predictions_final = model_predictions_bc.copy()  # Default: use bias-corrected
@@ -421,22 +432,23 @@ def main():
             
             # Compute RM+ML as a separate method using the best-performing model
             # (This is just for demonstration - in practice you'd choose based on validation)
-            best_model_name = selected_models[0]  # Use first model as example
-            print(f"   Computing RM+ML using {best_model_name} as example...")
+            rm_base_model = selected_models[0]  # Use first model as example
+            print(f"   Computing RM+{rm_base_model} using {rm_base_model} as base model...")
             
             S_HP, S_LP = physics.create_ratio_method_splits(n_configs)
             O1_truth = np.mean(input_reshaped, axis=1)
-            O1_pred = model_predictions_bc[best_model_name]  # Use model prediction as O1_pred
-            O2_pred = model_predictions_bc[best_model_name]  # Use same model for O2_pred
+            O1_pred = model_predictions_bc[rm_base_model]  # Use model prediction as O1_pred
+            O2_pred = model_predictions_bc[rm_base_model]  # Use same model for O2_pred
             
             rm_correlator = physics.ratio_method_plus_ml(O1_truth, O1_pred, O2_pred, S_HP, S_LP)
             
-            # Add RM+ML as a separate method (not replacing individual models)
+            # Add RM+MODEL as a separate method (not replacing individual models)
             # Convert single correlator to per-config format for statistics
             rm_per_config = np.tile(rm_correlator, (n_configs, 1))
-            model_predictions_final['RM+ML'] = rm_per_config
+            rm_method_key = f'RM+{rm_base_model}'
+            model_predictions_final[rm_method_key] = rm_per_config
             
-            print(f"   RM+ML correlator computed (shape: {rm_correlator.shape})")
+            print(f"   RM+{rm_base_model} correlator computed (shape: {rm_correlator.shape})")
         else:
             print("\n5a. Ratio Method + ML disabled, using bias-corrected predictions.")
 
@@ -459,9 +471,12 @@ def main():
         for model_name in selected_models:
             method_label_map[model_name.lower()] = model_name.upper()
         
-        # Add RM+ML if it was computed
-        if 'RM+ML' in model_predictions_final:
-            method_label_map['rm+ml'] = 'RM+ML'
+        # Add RM+MODEL if it was computed
+        if getattr(config, 'ENABLE_RATIO_METHOD', False):
+            rm_base_model = selected_models[0]
+            rm_method_key = f'RM+{rm_base_model}'
+            if rm_method_key in model_predictions_final:
+                method_label_map[rm_method_key.lower()] = f'RM+{rm_base_model}'
 
         for method_key, stats in statistics.items():
             label = method_label_map.get(method_key, method_key.upper())
@@ -569,23 +584,26 @@ def main():
                 }
                 print(f"     {model_name} fit exception: {str(e)}")
         
-        # Fit RM+ML if it was computed
-        if 'RM+ML' in model_predictions_final:
-            print("   Fitting RM+ML correlator.")
-            try:
-                fit_results["rm+ml"] = physics.fit_spectral_parameters(
-                    time_values,
-                    statistics["rm+ml"]["means"],
-                    n_states=2,
-                    t_min=config.TAU_MIN,
-                    t_max=config.TAU_MAX,
-                )
-            except Exception as e:
-                fit_results["rm+ml"] = {
-                    "success": False,
-                    "error": f"Exception: {str(e)}",
-                }
-                print(f"     RM+ML fit exception: {str(e)}")
+        # Fit RM+MODEL if it was computed
+        if getattr(config, 'ENABLE_RATIO_METHOD', False):
+            rm_base_model = selected_models[0]
+            rm_method_key = f'RM+{rm_base_model}'
+            if rm_method_key in model_predictions_final:
+                print(f"   Fitting {rm_method_key} correlator.")
+                try:
+                    fit_results[rm_method_key.lower()] = physics.fit_spectral_parameters(
+                        time_values,
+                        statistics[rm_method_key.lower()]["means"],
+                        n_states=2,
+                        t_min=config.TAU_MIN,
+                        t_max=config.TAU_MAX,
+                    )
+                except Exception as e:
+                    fit_results[rm_method_key.lower()] = {
+                        "success": False,
+                        "error": f"Exception: {str(e)}",
+                    }
+                    print(f"     {rm_method_key} fit exception: {str(e)}")
 
         # --------------------------------------------------------------
         # 7b. Bayesian spectral fits (optional)
@@ -649,27 +667,30 @@ def main():
                     }
                     print(f"     {model_name} Bayesian fit exception: {str(e)}")
             
-            # Also fit RM+ML if it was computed
-            if 'RM+ML' in model_predictions_final:
-                print("   Bayesian fitting RM+ML correlator.")
-                try:
-                    bayesian_fit_results["rm+ml"] = physics.fit_spectral_parameters_bayesian(
-                        time_values,
-                        statistics["rm+ml"]["means"],
-                        n_states=2,
-                        t_min=tau_min_bayes,
-                        t_max=tau_max_bayes,
-                        n_samples=n_samples,
-                    )
-                    if bayesian_fit_results["rm+ml"]["success"]:
-                        acc_rate = bayesian_fit_results["rm+ml"]["acceptance_rate"]
-                        print(f"     RM+ML Bayesian fit: acceptance rate = {acc_rate:.3f}")
-                except Exception as e:
-                    bayesian_fit_results["rm+ml"] = {
-                        "success": False,
-                        "error": f"Exception: {str(e)}",
-                    }
-                    print(f"     RM+ML Bayesian fit exception: {str(e)}")
+            # Also fit RM+MODEL if it was computed
+            if getattr(config, 'ENABLE_RATIO_METHOD', False):
+                rm_base_model = selected_models[0]
+                rm_method_key = f'RM+{rm_base_model}'
+                if rm_method_key in model_predictions_final:
+                    print(f"   Bayesian fitting {rm_method_key} correlator.")
+                    try:
+                        bayesian_fit_results[rm_method_key.lower()] = physics.fit_spectral_parameters_bayesian(
+                            time_values,
+                            statistics[rm_method_key.lower()]["means"],
+                            n_states=2,
+                            t_min=tau_min_bayes,
+                            t_max=tau_max_bayes,
+                            n_samples=n_samples,
+                        )
+                        if bayesian_fit_results[rm_method_key.lower()]["success"]:
+                            acc_rate = bayesian_fit_results[rm_method_key.lower()]["acceptance_rate"]
+                            print(f"     {rm_method_key} Bayesian fit: acceptance rate = {acc_rate:.3f}")
+                    except Exception as e:
+                        bayesian_fit_results[rm_method_key.lower()] = {
+                            "success": False,
+                            "error": f"Exception: {str(e)}",
+                        }
+                        print(f"     {rm_method_key} Bayesian fit exception: {str(e)}")
             
             print("   Bayesian spectral fits complete.")
         else:
@@ -695,9 +716,9 @@ def main():
         # Generate bias correction plots for each model
         bias_correction_figs = {}
         for model_name in selected_models:
-            # Use final predictions (RM+ML if enabled, otherwise bias-corrected)
+            # Use final predictions (bias-corrected)
             final_predictions = model_predictions_final[model_name]
-            method_suffix = " (RM+ML)" if getattr(config, 'ENABLE_RATIO_METHOD', False) else " (BC)"
+            method_suffix = " (BC)"
             
             bias_correction_figs[model_name] = plotting.plot_bias_correction(
                 time_values,
@@ -771,6 +792,94 @@ def main():
             
             print(f"   Generated {len(bayesian_overlay_figs)} Bayesian overlay plots + 1 comparison plot")
 
+        # Generate Vega-style bias correction effect plots
+        vega_bias_correction_figs = {}
+        vega_bias_correction_comparison_fig = None
+        
+        if bias_correction_effect_results:
+            print("   Generating Vega-style bias correction effect plots...")
+            
+            # Individual bias correction plots for each model
+            for model_name in selected_models:
+                model_key = model_name.lower()
+                if model_key in bias_correction_effect_results and bias_correction_effect_results[model_key] is not None:
+                    vega_bias_correction_figs[model_key] = plotting.plot_vega_bias_correction_effect(
+                        bias_correction_effect_results[model_key],
+                        model_label=model_name
+                    )
+            
+            # Multi-panel comparison plot
+            vega_bias_correction_comparison_fig = plotting.plot_vega_bias_correction_comparison_all_models(
+                bias_correction_effect_results,
+                method_labels=method_label_map
+            )
+            
+            print(f"   Generated {len(vega_bias_correction_figs)} Vega bias correction plots + 1 comparison plot")
+
+        # --------------------------------------------------------------
+        # 8b. Effective Mass Analysis
+        # --------------------------------------------------------------
+        effective_mass_comparison_fig = None
+        effective_mass_truth_vs_model_figs = {}
+        
+        if getattr(config, 'ENABLE_EFFECTIVE_MASS', True):
+            print("\n8b. Computing effective mass analysis.")
+            
+            # Get configuration settings
+            eff_mass_method = getattr(config, 'EFFECTIVE_MASS_METHOD', 'jackknife')
+            eff_mass_t_max = getattr(config, 'EFFECTIVE_MASS_T_MAX', 47)
+            eff_mass_E0_target = getattr(config, 'EFFECTIVE_MASS_E0_TARGET', 0.92)
+            
+            print(f"   Method: {eff_mass_method}, t_max: {eff_mass_t_max}, E0_target: {eff_mass_E0_target}")
+            
+            # Compute effective mass for all models
+            effective_mass_results = physics.compute_effective_mass_all_models(
+                truth_data, model_predictions_final, method=eff_mass_method
+            )
+            
+            print(f"   Effective mass computed for {len(effective_mass_results)} methods")
+            
+            # Generate effective mass plots
+            print("   Generating effective mass plots...")
+            
+            # Main comparison plot with all models
+            effective_mass_comparison_fig = plotting.plot_effective_mass_comparison(
+                effective_mass_results,
+                fit_results=fit_results,
+                method_labels=method_label_map,
+                t_max=eff_mass_t_max,
+                E0_target=eff_mass_E0_target
+            )
+            
+            # Individual TRUTH vs MODEL comparison plots for all models
+            effective_mass_truth_vs_model_figs = {}
+            
+            # Get truth data for comparisons
+            truth_eff_mass_result = effective_mass_results.get('truth', None)
+            truth_fit_result = fit_results.get('truth', None)
+            
+            # Create TRUTH vs MODEL plots for all models (excluding truth itself)
+            for model_key in effective_mass_results.keys():
+                if model_key == 'truth' or effective_mass_results[model_key] is None:
+                    continue
+                    
+                model_label = method_label_map.get(model_key, model_key.upper())
+                model_fit_result = fit_results.get(model_key, None)
+                
+                effective_mass_truth_vs_model_figs[model_key] = plotting.plot_effective_mass_truth_vs_model(
+                    truth_eff_mass_result,
+                    effective_mass_results[model_key],
+                    model_label=model_label,
+                    truth_fit_result=truth_fit_result,
+                    model_fit_result=model_fit_result,
+                    t_max=eff_mass_t_max,
+                    E0_target=eff_mass_E0_target
+                )
+            
+            print(f"   Generated 1 comparison plot + {len(effective_mass_truth_vs_model_figs)} TRUTH vs MODEL plots")
+        else:
+            print("\n8b. Effective mass analysis disabled.")
+
         # Create / locate the output directory for this experiment
         output_dir = create_experiment_output_dir(experiment_label, selected_models)
 
@@ -822,7 +931,7 @@ def main():
         # Collect all figures for saving
         figures = [correlator_fig, nts_fig]
         
-        # Add bias correction figures
+        # Add original bias correction figures (existing)
         for model_name in selected_models:
             figures.append(bias_correction_figs[model_name])
             
@@ -845,6 +954,22 @@ def main():
             # Add cross-model comparison plot (Plot Type B)
             if bayesian_comparison_fig:
                 figures.append(bayesian_comparison_fig)
+        
+        # Add Vega-style bias correction effect plots
+        if bias_correction_effect_results:
+            # Add individual Vega bias correction plots
+            for model_key in vega_bias_correction_figs:
+                figures.append(vega_bias_correction_figs[model_key])
+            
+            # Add Vega bias correction comparison plot
+            if vega_bias_correction_comparison_fig:
+                figures.append(vega_bias_correction_comparison_fig)
+        
+        # Add effective mass plots
+        if effective_mass_comparison_fig:
+            figures.append(effective_mass_comparison_fig)
+        for model_key in effective_mass_truth_vs_model_figs:
+            figures.append(effective_mass_truth_vs_model_figs[model_key])
         
         # Add spectral fit figures
         figures.extend(spectral_fit_figures)

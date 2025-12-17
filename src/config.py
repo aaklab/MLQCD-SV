@@ -51,7 +51,7 @@ RANDOM_SEED = 42
 # 3. Model selection
 # ------------------------------------------------------------------
 
-RUN_MODELS = ["GBR", "MLP", "RIDGE", "DTREE", "CNN", "TRANSFORMER"]
+RUN_MODELS = ["GBR"]  # Quick test with just one fast model
 
 # Wrap regressors in MultiOutputRegressor
 USE_MULTI_OUTPUT = True
@@ -114,6 +114,25 @@ RATIO_METHOD_EPS = 1e-12
 # S_LP: small set where only predictions are used (low precision)
 RATIO_METHOD_S_HP_FRACTION = 0.8  # Use 80% of configs for S_HP
 RATIO_METHOD_S_LP_FRACTION = 0.2  # Use 20% of configs for S_LP
+
+# ------------------------------------------------------------------
+# 6b. Effective Mass Analysis configuration
+# ------------------------------------------------------------------
+
+# Enable effective mass analysis and plotting
+ENABLE_EFFECTIVE_MASS = True
+
+# Error estimation method for effective mass: 'jackknife' or 'bootstrap'
+EFFECTIVE_MASS_METHOD = 'jackknife'
+
+# Number of bootstrap samples (if using bootstrap method)
+EFFECTIVE_MASS_N_BOOTSTRAP = 1000
+
+# Maximum time for effective mass plots (errors become large after t=20)
+EFFECTIVE_MASS_T_MAX = 47
+
+# Target ground-state energy for reference line (typical QCD scale)
+EFFECTIVE_MASS_E0_TARGET = 0.92
 
 # ------------------------------------------------------------------
 # 6. Experiment definitions
