@@ -38,7 +38,7 @@ PRE_LOG_EPS = 1e-12
 # ------------------------------------------------------------------
 
 # When True: use only the first N configs for quick runs
-DEBUG_FAST = True
+DEBUG_FAST = False
 DEBUG_FAST_N_CONFIGS = 30
 
 # Add timestamp to output PDF
@@ -83,11 +83,25 @@ TRUTH_MAGNITUDE_THRESHOLD = 1e-15
 BIAS_PLOT_Y_LIMITS = (-10, 10)
 
 # ------------------------------------------------------------------
+# 5b. Bayesian fitting configuration
+# ------------------------------------------------------------------
+
+# Enable Bayesian constrained fitting with priors
+ENABLE_BAYESIAN_FITTING = True
+
+# Number of MCMC samples for Bayesian fits
+BAYESIAN_N_SAMPLES = 1000
+
+# Bayesian fitting time range (can be different from regular fits)
+BAYESIAN_TAU_MIN = 3
+BAYESIAN_TAU_MAX = 40
+
+# ------------------------------------------------------------------
 # 6. Ratio Method + ML configuration
 # ------------------------------------------------------------------
 
 # Enable Vega's Ratio Method + ML technique
-ENABLE_RATIO_METHOD = False
+ENABLE_RATIO_METHOD = True
 
 # Blending parameter: 1.0 = RM+ML, other values = bRM+ML
 RATIO_METHOD_ALPHA = 1.0
@@ -107,7 +121,9 @@ RATIO_METHOD_S_LP_FRACTION = 0.2  # Use 20% of configs for S_LP
 
 from pathlib import Path
 
-DATA_DIR = Path("../data/raw")
+# Get the absolute path to the data directory
+# This file is in src/, so data/ is at the same level as src/
+DATA_DIR = Path(__file__).parent.parent / "data" / "raw"
 
 EXPERIMENTS: dict[int, dict] = {}
 _next_experiment_id = 1
@@ -177,7 +193,7 @@ GBR_MIN_SAMPLES_LEAF  = 5
 GBR_SUBSAMPLE         = 0.8
 GBR_N_ITER_NO_CHANGE  = 10
 GBR_VALIDATION_FRACTION = 0.1
-GBR_N_JOBS            = -1
+GBR_N_JOBS            = 1
 GBR_LOSS              = "squared_error"
 
 

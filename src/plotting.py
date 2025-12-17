@@ -612,3 +612,334 @@ def print_fit_parameters_table(fit_results_dict, method_labels=None):
         else:
             error_msg = result.get("error", "fit failed")
             print(f"{method_name:<10} {error_msg}")
+
+
+def print_bayesian_fit_parameters_table(bayesian_fit_results, method_labels=None):
+    """
+    Print a formatted table of Bayesian fit parameters with posterior uncertainties.
+    
+    Parameters
+    ----------
+    bayesian_fit_results : dict
+        Dictionary of Bayesian fit results from physics.fit_spectral_parameters_bayesian
+    method_labels : dict, optional
+        Maps method keys to human-readable labels
+    """
+    if not bayesian_fit_results:
+        print("No Bayesian fit results to display.")
+        return
+    
+    print("\n" + "=" * 80)
+    print("BAYESIAN SPECTRAL FIT PARAMETERS TABLE (with priors)")
+    print("=" * 80)
+    print(f"{'Method':<12} {'a0':<16} {'a1':<16} {'dE0':<16} {'dE1':<16} {'χ²/dof':<10} {'Acc.Rate':<8}")
+    print("-" * 80)
+    
+    for method_key, result in bayesian_fit_results.items():
+        if method_labels:
+            method_name = method_labels.get(method_key, method_key.upper())
+        else:
+            method_name = method_key.upper()
+        
+        if result.get("success", False):
+            # Format parameters with uncertainties
+            params_str = []
+            for param in ["a0", "a1", "dE0", "dE1"]:
+                if param in result and f"{param}_err" in result:
+                    val = result[param]
+                    err = result[param + "_err"]
+                    if np.isfinite(val) and np.isfinite(err):
+                        params_str.append(f"{val:.4f}({err:.4f})")
+                    else:
+                        params_str.append("N/A")
+                else:
+                    params_str.append("N/A")
+            
+            chi2_dof = result.get("chi2_dof", float("nan"))
+            acc_rate = result.get("acceptance_rate", float("nan"))
+            
+            print(
+                f"{method_name:<12} "
+                f"{params_str[0]:<16} {params_str[1]:<16} "
+                f"{params_str[2]:<16} {params_str[3]:<16} "
+                f"{chi2_dof:<10.3f} {acc_rate:<8.3f}"
+            )
+        else:
+            error_msg = result.get("error", "Bayesian fit failed")
+            print(f"{method_name:<12} {error_msg}")
+    
+    print("=" * 80)
+    print("Note: Bayesian fits use MCMC sampling with physically-motivated priors")
+    print("Acceptance rate should be between 0.2-0.5 for good mixing")
+
+def plot_bayesian_spectral_fit_overlay(time_values, correlator_data, bayesian_fit_result, 
+                                     model_label="MODEL", T=96):
+    """
+    Plot Type A: Bayesian spectral-fit overlay (clean)
+    
+    Shows:
+    - Data points: ensemble-mean correlator
+    - Fit band: Bayesian posterior mean ± uncertainty
+    - Clear labeling for model type
+    
+    Answers: "Does the Bayesian fit work for this correlator?"
+    
+    Parameters
+    ----------
+    time_values : array
+        Time coordinates
+    correlator_data : array
+        Ensemble-mean correlator values
+    bayesian_fit_result : dict
+        Results from physics.fit_spectral_parameters_bayesian
+    model_label : str
+        Model name (e.g., "TRUTH", "GBR", "MLP")
+    T : int
+        Temporal extent for fit function
+        
+    Returns
+    -------
+    matplotlib.Figure
+    """
+    import numpy as np
+    import matplotlib.pyplot as plt
+    from physics import multi_exponential_correlator
+    
+    fig, ax = plt.subplots(figsize=(10, 6))
+    
+    # Plot data points
+    ax.errorbar(time_values, correlator_data, 
+                marker='o', linestyle='none', 
+                color='black', markersize=4,
+                label=f'{model_label} Data')
+    
+    if bayesian_fit_result.get("success", False):
+        # Extract posterior samples if available
+        if "posterior_samples" in bayesian_fit_result:
+            samples = bayesian_fit_result["posterior_samples"]
+            n_plot_samples = min(100, len(samples))  # Don't plot too many curves
+            
+            # Plot sample of posterior curves (light)
+            for i in range(0, len(samples), len(samples)//n_plot_samples):
+                params = samples[i]
+                y_sample = multi_exponential_correlator(time_values, params, T)
+                ax.plot(time_values, y_sample, 
+                       color='blue', alpha=0.02, linewidth=0.5)
+        
+        # Plot posterior mean curve
+        n_states = bayesian_fit_result.get("n_states", 2)
+        posterior_params = []
+        for n in range(n_states):
+            posterior_params.append(bayesian_fit_result[f"a{n}"])
+        for n in range(n_states):
+            if n == 0:
+                posterior_params.append(bayesian_fit_result[f"dE{n}"])
+            else:
+                # Reconstruct absolute energies from differences
+                E0 = bayesian_fit_result["dE0"]
+                dE = bayesian_fit_result[f"dE{n}"]
+                posterior_params.append(E0 + dE)
+        
+        y_fit = multi_exponential_correlator(time_values, posterior_params, T)
+        ax.plot(time_values, y_fit, 
+               color='red', linewidth=2, 
+               label=f'Bayesian Fit (χ²/dof={bayesian_fit_result.get("chi2_dof", 0):.2f})')
+        
+        # Add fit info text
+        acc_rate = bayesian_fit_result.get("acceptance_rate", 0)
+        n_samples = bayesian_fit_result.get("n_samples", 0)
+        ax.text(0.02, 0.98, f'MCMC: {n_samples} samples\nAcceptance: {acc_rate:.3f}',
+                transform=ax.transAxes, verticalalignment='top',
+                bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+    else:
+        # Fit failed
+        error_msg = bayesian_fit_result.get("error", "Fit failed")
+        ax.text(0.5, 0.5, f'Bayesian fit failed:\n{error_msg}',
+                transform=ax.transAxes, ha='center', va='center',
+                bbox=dict(boxstyle='round', facecolor='red', alpha=0.3))
+    
+    ax.set_xlabel(r'$t$')
+    ax.set_ylabel(r'$C(t)$')
+    ax.set_yscale('log')
+    ax.set_title(f'Bayesian Spectral Fit: {model_label}')
+    ax.grid(True, alpha=0.3)
+    ax.legend()
+    
+    fig.tight_layout()
+    return fig
+
+
+def plot_bayesian_cross_model_comparison(bayesian_fit_results, method_labels=None):
+    """
+    Plot Type B: Cross-model comparison (compact)
+    
+    Shows extracted E0 ± error for all models with error bars from Bayesian fit.
+    
+    Answers: "How do the models compare?"
+    
+    Parameters
+    ----------
+    bayesian_fit_results : dict
+        Dictionary of Bayesian fit results for all models
+    method_labels : dict, optional
+        Maps method keys to human-readable labels
+        
+    Returns
+    -------
+    matplotlib.Figure
+    """
+    import numpy as np
+    import matplotlib.pyplot as plt
+    
+    # Extract successful fits
+    models = []
+    E0_values = []
+    E0_errors = []
+    colors = []
+    
+    color_map = {
+        'truth': 'black',
+        'gbr': 'blue', 
+        'mlp': 'red',
+        'ridge': 'green',
+        'dtree': 'orange',
+        'cnn': 'purple',
+        'transformer': 'brown',
+        'rm+ml': 'pink'
+    }
+    
+    for method_key, result in bayesian_fit_results.items():
+        if result.get("success", False) and "dE0" in result and "dE0_err" in result:
+            if method_labels:
+                label = method_labels.get(method_key, method_key.upper())
+            else:
+                label = method_key.upper()
+            
+            models.append(label)
+            E0_values.append(result["dE0"])
+            E0_errors.append(result["dE0_err"])
+            colors.append(color_map.get(method_key, 'gray'))
+    
+    if not models:
+        # No successful fits
+        fig, ax = plt.subplots(figsize=(8, 6))
+        ax.text(0.5, 0.5, 'No successful Bayesian fits to compare',
+                transform=ax.transAxes, ha='center', va='center',
+                fontsize=14)
+        ax.set_title('Bayesian Cross-Model Comparison')
+        return fig
+    
+    # Create the comparison plot
+    fig, ax = plt.subplots(figsize=(10, 6))
+    
+    x_positions = np.arange(len(models))
+    
+    # Plot error bars
+    bars = ax.errorbar(x_positions, E0_values, yerr=E0_errors,
+                      fmt='o', markersize=8, capsize=5, capthick=2,
+                      color='black', ecolor='black')
+    
+    # Color the markers
+    for i, (x, y, color) in enumerate(zip(x_positions, E0_values, colors)):
+        ax.scatter(x, y, color=color, s=100, zorder=5)
+    
+    # Formatting
+    ax.set_xlabel('Model')
+    ax.set_ylabel(r'$E_0$ (Ground State Energy)')
+    ax.set_title('Bayesian Cross-Model Comparison: Ground State Energy')
+    ax.set_xticks(x_positions)
+    ax.set_xticklabels(models, rotation=45, ha='right')
+    ax.grid(True, alpha=0.3)
+    
+    # Add horizontal line at truth value if available
+    if 'TRUTH' in models:
+        truth_idx = models.index('TRUTH')
+        truth_E0 = E0_values[truth_idx]
+        ax.axhline(y=truth_E0, color='black', linestyle='--', alpha=0.5,
+                  label=f'Truth: {truth_E0:.4f}')
+        ax.legend()
+    
+    # Add statistics text
+    if len(E0_values) > 1:
+        mean_E0 = np.mean(E0_values)
+        std_E0 = np.std(E0_values)
+        ax.text(0.02, 0.98, f'Mean E₀: {mean_E0:.4f}\nStd E₀: {std_E0:.4f}',
+                transform=ax.transAxes, verticalalignment='top',
+                bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+    
+    fig.tight_layout()
+    return fig
+
+def print_bayesian_summary_table(bayesian_fit_results, method_labels=None):
+    """
+    Print a compact summary table of E₀ ± σ for all models (Bayesian posterior).
+    
+    This complements the plots nicely but is not mandatory.
+    Shows ground state energy with Bayesian uncertainties in a clean format.
+    
+    Parameters
+    ----------
+    bayesian_fit_results : dict
+        Dictionary of Bayesian fit results for all models
+    method_labels : dict, optional
+        Maps method keys to human-readable labels
+    """
+    if not bayesian_fit_results:
+        print("No Bayesian fit results available for summary table.")
+        return
+    
+    print("\n" + "=" * 60)
+    print("BAYESIAN SUMMARY: Ground State Energy E₀ ± σ")
+    print("=" * 60)
+    print(f"{'Model':<15} {'E₀ ± σ':<20} {'χ²/dof':<10} {'Status'}")
+    print("-" * 60)
+    
+    # Collect successful fits
+    successful_fits = []
+    
+    for method_key, result in bayesian_fit_results.items():
+        if method_labels:
+            model_name = method_labels.get(method_key, method_key.upper())
+        else:
+            model_name = method_key.upper()
+        
+        if result.get("success", False) and "dE0" in result and "dE0_err" in result:
+            E0 = result["dE0"]
+            E0_err = result["dE0_err"]
+            chi2_dof = result.get("chi2_dof", float("nan"))
+            
+            # Format E0 ± error nicely
+            if np.isfinite(E0) and np.isfinite(E0_err):
+                E0_str = f"{E0:.4f} ± {E0_err:.4f}"
+                successful_fits.append((model_name, E0, E0_err))
+            else:
+                E0_str = "N/A"
+            
+            status = "✓" if np.isfinite(chi2_dof) and chi2_dof < 10 else "⚠"
+            
+            print(f"{model_name:<15} {E0_str:<20} {chi2_dof:<10.3f} {status}")
+        else:
+            error_msg = result.get("error", "Failed")[:15] + "..." if len(result.get("error", "Failed")) > 15 else result.get("error", "Failed")
+            print(f"{model_name:<15} {'Failed':<20} {'N/A':<10} ✗")
+    
+    # Add summary statistics if we have multiple successful fits
+    if len(successful_fits) > 1:
+        print("-" * 60)
+        E0_values = [E0 for _, E0, _ in successful_fits]
+        mean_E0 = np.mean(E0_values)
+        std_E0 = np.std(E0_values, ddof=1)
+        
+        print(f"{'SUMMARY':<15} {'Mean: ' + f'{mean_E0:.4f}':<20} {'Std: ' + f'{std_E0:.4f}':<10}")
+        
+        # Find truth value if available
+        truth_E0 = None
+        for name, E0, _ in successful_fits:
+            if name.upper() == 'TRUTH':
+                truth_E0 = E0
+                break
+        
+        if truth_E0 is not None:
+            print(f"{'TRUTH REF':<15} {f'{truth_E0:.4f}':<20} {'(reference)':<10}")
+    
+    print("=" * 60)
+    print("Note: ✓ = good fit (χ²/dof < 10), ⚠ = marginal fit, ✗ = failed fit")

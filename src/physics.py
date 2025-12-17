@@ -493,3 +493,213 @@ def fit_spectral_parameters(time_values,
             "error": f"Fit failed: {str(e)}",
         }
 
+
+def fit_spectral_parameters_bayesian(time_values,
+                                   correlator_mean,
+                                   correlator_cov=None,
+                                   n_states=2,
+                                   t_min=None,
+                                   t_max=None,
+                                   T=96,
+                                   n_samples=1000):
+    """
+    Perform Bayesian multi-exponential fits with priors for correlator data.
+    
+    This is a minimal implementation using wide priors and simple MCMC sampling.
+    For production use, consider more sophisticated tools like lsqfit/gvar/corrfitter.
+    
+    Args:
+        time_values (array): Time slice values
+        correlator_mean (array): Ensemble-average correlator (1D)
+        correlator_cov (array): Covariance matrix or diagonal variances (optional)
+        n_states (int): Number of states to fit (default: 2)
+        t_min (int): Minimum time for fitting (default: config.TAU_MIN)
+        t_max (int): Maximum time for fitting (default: config.TAU_MAX)
+        T (int): Temporal extent of the lattice (default: 96)
+        n_samples (int): Number of MCMC samples (default: 1000)
+        
+    Returns:
+        dict: Bayesian fit results with posterior means, errors, and diagnostics
+    """
+    import numpy as np
+    from scipy.stats import norm, uniform
+    
+    # Use config defaults if not specified
+    if t_min is None:
+        t_min = config.TAU_MIN
+    if t_max is None:
+        t_max = config.TAU_MAX
+    
+    # Basic validation (reuse logic from regular fit)
+    correlator_mean = np.asarray(correlator_mean)
+    time_values = np.asarray(time_values)
+    
+    if correlator_mean.ndim != 1:
+        raise ValueError(f"correlator_mean must be 1D, got shape {correlator_mean.shape}")
+    
+    n_times = correlator_mean.shape[0]
+    if time_values.ndim != 1 or len(time_values) != n_times:
+        time_values = np.arange(n_times)
+    
+    # Select fitting range
+    fit_mask = (time_values >= t_min) & (time_values <= t_max)
+    tau_fit = time_values[fit_mask]
+    data_fit = correlator_mean[fit_mask]
+    
+    if len(tau_fit) < 2 * n_states:
+        return {
+            "success": False,
+            "method": "bayesian_mcmc",
+            "error": f"Not enough data points for fit: {len(tau_fit)} < {2 * n_states}",
+        }
+    
+    # Estimate uncertainties
+    if correlator_cov is not None:
+        if correlator_cov.ndim == 2:
+            cov_fit = correlator_cov[np.ix_(fit_mask, fit_mask)]
+            try:
+                sigma = np.sqrt(np.diag(cov_fit))
+            except Exception:
+                sigma = np.abs(data_fit) * 0.05 + 1e-8
+        else:
+            sigma = np.sqrt(correlator_cov[fit_mask])
+    else:
+        sigma = np.abs(data_fit) * 0.05 + 1e-8
+    
+    # Define priors (wide but physically reasonable)
+    def log_prior(params):
+        """Log prior probability for parameters [a0, a1, ..., E0, E1, ...]"""
+        n_params = len(params)
+        n_amplitudes = n_states
+        
+        log_p = 0.0
+        
+        # Amplitude priors: log-normal around 0.1 with wide spread
+        for i in range(n_amplitudes):
+            a = params[i]
+            if a <= 0:
+                return -np.inf
+            log_p += norm.logpdf(np.log(a), loc=np.log(0.1), scale=1.0)
+        
+        # Energy priors: uniform between reasonable bounds, with ordering constraint
+        energies = params[n_amplitudes:]
+        for i, E in enumerate(energies):
+            if E < 0.05 or E > 3.0:
+                return -np.inf
+            # Enforce ordering: E0 < E1 < E2 ...
+            if i > 0 and E <= energies[i-1]:
+                return -np.inf
+        
+        return log_p
+    
+    def log_likelihood(params):
+        """Log likelihood for given parameters"""
+        try:
+            y_pred = multi_exponential_correlator(tau_fit, params, T)
+            residuals = (data_fit - y_pred) / sigma
+            return -0.5 * np.sum(residuals**2)
+        except:
+            return -np.inf
+    
+    def log_posterior(params):
+        """Log posterior = log prior + log likelihood"""
+        lp = log_prior(params)
+        if not np.isfinite(lp):
+            return -np.inf
+        return lp + log_likelihood(params)
+    
+    # Initialize parameters (use reasonable starting values)
+    n_params = 2 * n_states
+    params_init = []
+    
+    # Initial amplitudes
+    for n in range(n_states):
+        params_init.append(0.1 * (0.5 ** n))  # Decreasing amplitudes
+    
+    # Initial energies (well-separated)
+    for n in range(n_states):
+        params_init.append(0.3 + n * 0.4)
+    
+    params_init = np.array(params_init)
+    
+    # Simple Metropolis-Hastings MCMC
+    samples = []
+    current_params = params_init.copy()
+    current_log_p = log_posterior(current_params)
+    
+    n_accepted = 0
+    proposal_scale = 0.1  # Adjust for acceptance rate
+    
+    try:
+        for i in range(n_samples):
+            # Propose new parameters
+            proposal = current_params + np.random.normal(0, proposal_scale, n_params)
+            proposal_log_p = log_posterior(proposal)
+            
+            # Accept/reject
+            if np.log(np.random.rand()) < (proposal_log_p - current_log_p):
+                current_params = proposal
+                current_log_p = proposal_log_p
+                n_accepted += 1
+            
+            samples.append(current_params.copy())
+        
+        samples = np.array(samples)
+        acceptance_rate = n_accepted / n_samples
+        
+        # Burn-in: discard first 20% of samples
+        burn_in = n_samples // 5
+        samples_burned = samples[burn_in:]
+        
+        # Compute posterior statistics
+        posterior_means = np.mean(samples_burned, axis=0)
+        posterior_stds = np.std(samples_burned, axis=0)
+        
+        # Compute chi2 for posterior mean
+        y_pred = multi_exponential_correlator(tau_fit, posterior_means, T)
+        residuals = (data_fit - y_pred) / sigma
+        chi2 = np.sum(residuals**2)
+        dof = len(tau_fit) - n_params
+        chi2_dof = chi2 / max(dof, 1)
+        
+        # Format results
+        results = {
+            "success": True,
+            "method": "bayesian_mcmc",
+            "n_states": n_states,
+            "n_samples": n_samples,
+            "acceptance_rate": acceptance_rate,
+            "chi2": chi2,
+            "dof": dof,
+            "chi2_dof": chi2_dof,
+            "Q": 1.0 - chi2_dof,  # Rough Q-value approximation
+        }
+        
+        # Add parameter results
+        for n in range(n_states):
+            results[f"a{n}"] = posterior_means[n]
+            results[f"a{n}_err"] = posterior_stds[n]
+        
+        for n in range(n_states):
+            E_idx = n_states + n
+            if n == 0:
+                results[f"dE{n}"] = posterior_means[E_idx]
+                results[f"dE{n}_err"] = posterior_stds[E_idx]
+            else:
+                # Energy differences
+                E_diff_samples = samples_burned[:, E_idx] - samples_burned[:, n_states + 1]
+                results[f"dE{n}"] = np.mean(E_diff_samples)
+                results[f"dE{n}_err"] = np.std(E_diff_samples)
+        
+        # Store samples for further analysis if needed
+        results["posterior_samples"] = samples_burned
+        
+        return results
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "method": "bayesian_mcmc",
+            "error": f"Bayesian fit failed: {str(e)}",
+        }
+

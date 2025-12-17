@@ -235,7 +235,7 @@ def train_gbr_model(X_train, y_train):
     subsample           = getattr(config, "GBR_SUBSAMPLE",           default_params["subsample"])
     n_iter_no_change    = getattr(config, "GBR_N_ITER_NO_CHANGE",    default_params["n_iter_no_change"])
     validation_fraction = getattr(config, "GBR_VALIDATION_FRACTION", default_params["validation_fraction"])
-    n_jobs              = getattr(config, "GBR_N_JOBS",              -1)  # -1 = all cores
+    n_jobs              = getattr(config, "GBR_N_JOBS",              1)   # Use single core to avoid BrokenProcessPool
     loss                = getattr(config, "GBR_LOSS",                "squared_error")
 
     gbr_base = GradientBoostingRegressor(
@@ -511,7 +511,7 @@ def train_ridge_model(X_train, y_train):
 
     if getattr(config, "USE_MULTI_OUTPUT", True):
         print("Wrapping Ridge in MultiOutputRegressor")
-        model = MultiOutputRegressor(base_regressor, n_jobs=-1)
+        model = MultiOutputRegressor(base_regressor, n_jobs=1)
     else:
         model = base_regressor
 
@@ -546,7 +546,7 @@ def train_dtree_model(X_train, y_train):
 
     if getattr(config, "USE_MULTI_OUTPUT", True):
         print("Wrapping DecisionTree in MultiOutputRegressor")
-        model = MultiOutputRegressor(base_regressor, n_jobs=-1)
+        model = MultiOutputRegressor(base_regressor, n_jobs=1)
     else:
         model = base_regressor
 

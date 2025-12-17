@@ -14,10 +14,14 @@ Responsible for:
 import os
 import re
 from datetime import datetime
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 from matplotlib.backends.backend_pdf import PdfPages
+
+# project_root = MLQCD-SV (one level above src/)
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 import matplotlib.pyplot as plt
 
 import config

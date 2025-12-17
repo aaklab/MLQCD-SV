@@ -411,41 +411,32 @@ def main():
         model_predictions_final = model_predictions_bc.copy()  # Default: use bias-corrected
         
         if getattr(config, 'ENABLE_RATIO_METHOD', False):
-            print("\n5a. Applying Vega's Ratio Method + ML technique.")
+            print("\n5a. Ratio Method + ML is enabled, but using bias-corrected predictions for model comparison.")
+            print("   Note: RM+ML produces ensemble averages, not per-model predictions.")
+            print("   For proper model comparison, we use bias-corrected predictions.")
+            print("   RM+ML will be computed separately as an additional method.")
             
-            # Create S_HP and S_LP configuration splits
+            # Use bias-corrected predictions to preserve model differences
+            model_predictions_final = model_predictions_bc.copy()
+            
+            # Compute RM+ML as a separate method using the best-performing model
+            # (This is just for demonstration - in practice you'd choose based on validation)
+            best_model_name = selected_models[0]  # Use first model as example
+            print(f"   Computing RM+ML using {best_model_name} as example...")
+            
             S_HP, S_LP = physics.create_ratio_method_splits(n_configs)
+            O1_truth = np.mean(input_reshaped, axis=1)
+            O1_pred = model_predictions_bc[best_model_name]  # Use model prediction as O1_pred
+            O2_pred = model_predictions_bc[best_model_name]  # Use same model for O2_pred
             
-            # Apply RM+ML to each model
-            model_predictions_rm = {}
-            for model_name in selected_models:
-                print(f"   Computing RM+ML for {model_name}...")
-                
-                # For RM+ML, we need:
-                # O1_truth = input correlator (known/trusted)
-                # O1_pred = ML prediction of input correlator  
-                # O2_pred = ML prediction of target correlator (bias-corrected)
-                
-                # Use the input correlator as O1_truth (reshaped to per-config means)
-                O1_truth = np.mean(input_reshaped, axis=1)  # Average over time sources
-                
-                # Get ML predictions for input (train model on input->input)
-                # For simplicity, use the bias-corrected predictions as O1_pred approximation
-                O1_pred = model_predictions_bc[model_name]  # This is an approximation
-                O2_pred = model_predictions_bc[model_name]  # Target predictions
-                
-                # Apply Vega's RM+ML formula
-                rm_correlator = physics.ratio_method_plus_ml(
-                    O1_truth, O1_pred, O2_pred, S_HP, S_LP
-                )
-                
-                # Convert back to per-config format for consistency
-                model_predictions_rm[model_name] = np.tile(rm_correlator, (n_configs, 1))
-                print(f"   {model_name} RM+ML correlator shape: {rm_correlator.shape}")
+            rm_correlator = physics.ratio_method_plus_ml(O1_truth, O1_pred, O2_pred, S_HP, S_LP)
             
-            # Use RM+ML predictions for final analysis
-            model_predictions_final = model_predictions_rm
-            print("   Using Ratio Method + ML predictions for final analysis.")
+            # Add RM+ML as a separate method (not replacing individual models)
+            # Convert single correlator to per-config format for statistics
+            rm_per_config = np.tile(rm_correlator, (n_configs, 1))
+            model_predictions_final['RM+ML'] = rm_per_config
+            
+            print(f"   RM+ML correlator computed (shape: {rm_correlator.shape})")
         else:
             print("\n5a. Ratio Method + ML disabled, using bias-corrected predictions.")
 
@@ -467,6 +458,10 @@ def main():
         method_label_map = {"truth": "TRUTH"}
         for model_name in selected_models:
             method_label_map[model_name.lower()] = model_name.upper()
+        
+        # Add RM+ML if it was computed
+        if 'RM+ML' in model_predictions_final:
+            method_label_map['rm+ml'] = 'RM+ML'
 
         for method_key, stats in statistics.items():
             label = method_label_map.get(method_key, method_key.upper())
@@ -573,6 +568,112 @@ def main():
                     "error": f"Exception: {str(e)}",
                 }
                 print(f"     {model_name} fit exception: {str(e)}")
+        
+        # Fit RM+ML if it was computed
+        if 'RM+ML' in model_predictions_final:
+            print("   Fitting RM+ML correlator.")
+            try:
+                fit_results["rm+ml"] = physics.fit_spectral_parameters(
+                    time_values,
+                    statistics["rm+ml"]["means"],
+                    n_states=2,
+                    t_min=config.TAU_MIN,
+                    t_max=config.TAU_MAX,
+                )
+            except Exception as e:
+                fit_results["rm+ml"] = {
+                    "success": False,
+                    "error": f"Exception: {str(e)}",
+                }
+                print(f"     RM+ML fit exception: {str(e)}")
+
+        # --------------------------------------------------------------
+        # 7b. Bayesian spectral fits (optional)
+        # --------------------------------------------------------------
+        bayesian_fit_results = {}
+        
+        if getattr(config, 'ENABLE_BAYESIAN_FITTING', False):
+            print("\n7b. Performing Bayesian spectral fits with priors.")
+            
+            n_samples = getattr(config, 'BAYESIAN_N_SAMPLES', 1000)
+            tau_min_bayes = getattr(config, 'BAYESIAN_TAU_MIN', config.TAU_MIN)
+            tau_max_bayes = getattr(config, 'BAYESIAN_TAU_MAX', config.TAU_MAX)
+            
+            print(f"   Bayesian settings: {n_samples} samples, τ ∈ [{tau_min_bayes}, {tau_max_bayes}]")
+            
+            # Bayesian fit for truth
+            print("   Bayesian fitting truth correlator.")
+            try:
+                bayesian_fit_results["truth"] = physics.fit_spectral_parameters_bayesian(
+                    time_values,
+                    statistics["truth"]["means"],
+                    n_states=2,
+                    t_min=tau_min_bayes,
+                    t_max=tau_max_bayes,
+                    n_samples=n_samples,
+                )
+                if bayesian_fit_results["truth"]["success"]:
+                    acc_rate = bayesian_fit_results["truth"]["acceptance_rate"]
+                    print(f"     Truth Bayesian fit: acceptance rate = {acc_rate:.3f}")
+            except Exception as e:
+                bayesian_fit_results["truth"] = {
+                    "success": False,
+                    "error": f"Exception: {str(e)}",
+                }
+                print(f"     Truth Bayesian fit exception: {str(e)}")
+            
+            # Bayesian fit for all selected models
+            print(f"   Bayesian fitting all {len(selected_models)} models...")
+            
+            for model_name in selected_models:
+                model_key = model_name.lower()
+                print(f"   Bayesian fitting {model_name} correlator.")
+                try:
+                    bayesian_fit_results[model_key] = physics.fit_spectral_parameters_bayesian(
+                        time_values,
+                        statistics[model_key]["means"],
+                        n_states=2,
+                        t_min=tau_min_bayes,
+                        t_max=tau_max_bayes,
+                        n_samples=n_samples,
+                    )
+                    if bayesian_fit_results[model_key]["success"]:
+                        acc_rate = bayesian_fit_results[model_key]["acceptance_rate"]
+                        print(f"     {model_name} Bayesian fit: acceptance rate = {acc_rate:.3f}")
+                    else:
+                        print(f"     {model_name} Bayesian fit failed")
+                except Exception as e:
+                    bayesian_fit_results[model_key] = {
+                        "success": False,
+                        "error": f"Exception: {str(e)}",
+                    }
+                    print(f"     {model_name} Bayesian fit exception: {str(e)}")
+            
+            # Also fit RM+ML if it was computed
+            if 'RM+ML' in model_predictions_final:
+                print("   Bayesian fitting RM+ML correlator.")
+                try:
+                    bayesian_fit_results["rm+ml"] = physics.fit_spectral_parameters_bayesian(
+                        time_values,
+                        statistics["rm+ml"]["means"],
+                        n_states=2,
+                        t_min=tau_min_bayes,
+                        t_max=tau_max_bayes,
+                        n_samples=n_samples,
+                    )
+                    if bayesian_fit_results["rm+ml"]["success"]:
+                        acc_rate = bayesian_fit_results["rm+ml"]["acceptance_rate"]
+                        print(f"     RM+ML Bayesian fit: acceptance rate = {acc_rate:.3f}")
+                except Exception as e:
+                    bayesian_fit_results["rm+ml"] = {
+                        "success": False,
+                        "error": f"Exception: {str(e)}",
+                    }
+                    print(f"     RM+ML Bayesian fit exception: {str(e)}")
+            
+            print("   Bayesian spectral fits complete.")
+        else:
+            print("\n7b. Bayesian fitting disabled.")
 
         # --------------------------------------------------------------
         # 8. Plotting and saving results
@@ -636,6 +737,40 @@ def main():
             method_labels=method_label_map,
         )
 
+        # Generate Bayesian spectral fit plots (if Bayesian fitting was performed)
+        bayesian_overlay_figs = {}
+        bayesian_comparison_fig = None
+        
+        if bayesian_fit_results:
+            print("   Generating Bayesian spectral fit plots...")
+            
+            # Plot Type A: Individual Bayesian spectral-fit overlays
+            for method_key, bayes_result in bayesian_fit_results.items():
+                if bayes_result.get("success", False):
+                    if method_label_map:
+                        label = method_label_map.get(method_key, method_key.upper())
+                    else:
+                        label = method_key.upper()
+                    
+                    # Get the correlator data for this method
+                    if method_key in statistics:
+                        correlator_data = statistics[method_key]["means"]
+                        
+                        bayesian_overlay_figs[method_key] = plotting.plot_bayesian_spectral_fit_overlay(
+                            time_values,
+                            correlator_data,
+                            bayes_result,
+                            model_label=label
+                        )
+            
+            # Plot Type B: Cross-model comparison
+            bayesian_comparison_fig = plotting.plot_bayesian_cross_model_comparison(
+                bayesian_fit_results,
+                method_labels=method_label_map
+            )
+            
+            print(f"   Generated {len(bayesian_overlay_figs)} Bayesian overlay plots + 1 comparison plot")
+
         # Create / locate the output directory for this experiment
         output_dir = create_experiment_output_dir(experiment_label, selected_models)
 
@@ -655,10 +790,32 @@ def main():
         # Print to console (so behaviour stays the same)
         print(table_text, end="")
 
+        # Print Bayesian fit results if available
+        if bayesian_fit_results:
+            bayesian_buffer = StringIO()
+            with contextlib.redirect_stdout(bayesian_buffer):
+                plotting.print_bayesian_fit_parameters_table(bayesian_fit_results, method_label_map)
+            
+            bayesian_table_text = bayesian_buffer.getvalue()
+            print(bayesian_table_text, end="")
+            
+            # Print Bayesian summary table (E₀ ± σ for all models)
+            summary_buffer = StringIO()
+            with contextlib.redirect_stdout(summary_buffer):
+                plotting.print_bayesian_summary_table(bayesian_fit_results, method_label_map)
+            
+            summary_table_text = summary_buffer.getvalue()
+            print(summary_table_text, end="")
+            
+            # Append all Bayesian results to the same file
+            combined_text = table_text + "\n" + bayesian_table_text + "\n" + summary_table_text
+        else:
+            combined_text = table_text
+
         # Save to a text file for later use in the report
         txt_path = os.path.join(output_dir, "spectral_fit_parameters.txt")
         with open(txt_path, "w", encoding="utf-8") as f:
-            f.write(table_text)
+            f.write(combined_text)
 
         print(f"Saved spectral fit table to: {txt_path}")
 
@@ -678,6 +835,16 @@ def main():
             figures.append(full_nts_figs[model_name])
             
         figures.append(fit_params_fig)
+        
+        # Add Bayesian spectral fit figures
+        if bayesian_fit_results:
+            # Add individual Bayesian overlay plots (Plot Type A)
+            for method_key in bayesian_overlay_figs:
+                figures.append(bayesian_overlay_figs[method_key])
+            
+            # Add cross-model comparison plot (Plot Type B)
+            if bayesian_comparison_fig:
+                figures.append(bayesian_comparison_fig)
         
         # Add spectral fit figures
         figures.extend(spectral_fit_figures)
