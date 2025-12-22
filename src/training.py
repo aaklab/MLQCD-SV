@@ -26,10 +26,15 @@ from sklearn.tree import DecisionTreeRegressor
 from sklearn.preprocessing import StandardScaler
 
 
-# --- NEW: PyTorch for CNN / Transformer models ---
-import torch
-import torch.nn as nn
-from torch.utils.data import DataLoader, TensorDataset
+# --- NEW: PyTorch for CNN / Transformer models (conditional import) ---
+try:
+    import torch
+    import torch.nn as nn
+    from torch.utils.data import DataLoader, TensorDataset
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
+    print("Warning: PyTorch not available. CNN and Transformer models will be disabled.")
 
 
 def _wrap_if_multioutput(base_model, n_jobs=None):
@@ -173,6 +178,8 @@ def estimate_mlp_parameters(hidden_layer_sizes, n_features, n_outputs):
 
 def _get_device():
     """Return the torch device to use."""
+    if not TORCH_AVAILABLE:
+        raise ImportError("PyTorch is not available. Cannot use CNN or Transformer models.")
     if torch.cuda.is_available():
         return torch.device("cuda")
     return torch.device("cpu")
@@ -418,13 +425,6 @@ def train_mlp_model(X_train, y_train):
 # ---------------------------------------------------------------------------
 
 
-def _get_device():
-    """Return the torch device to use."""
-    if torch.cuda.is_available():
-        return torch.device("cuda")
-    return torch.device("cpu")
-
-
 class _TorchRegressorBase:
     """
     Simple sklearn-like wrapper for torch models:
@@ -433,6 +433,8 @@ class _TorchRegressorBase:
     """
 
     def __init__(self, model, n_epochs=50, lr=1e-3, batch_size=64):
+        if not TORCH_AVAILABLE:
+            raise ImportError("PyTorch is not available. Cannot use PyTorch-based models.")
         self.model = model
         self.n_epochs = n_epochs
         self.lr = lr
@@ -494,116 +496,48 @@ class _TorchRegressorBase:
 
 
 # ---------------------------------------------------------------------------
-# Ridge / Decision Tree models (pure sklearn)
-# ---------------------------------------------------------------------------
-
-
-def train_ridge_model(X_train, y_train):
-    """
-    Train a Ridge Regression model for correlator prediction.
-    """
-    validate_model_training_inputs(X_train, y_train)
-
-    alpha = getattr(config, "RIDGE_ALPHA", 1.0)
-    random_state = getattr(config, "RANDOM_SEED", 123)
-
-    base_regressor = Ridge(alpha=alpha, random_state=random_state)
-
-    if getattr(config, "USE_MULTI_OUTPUT", True):
-        print("Wrapping Ridge in MultiOutputRegressor")
-        model = MultiOutputRegressor(base_regressor, n_jobs=1)
-    else:
-        model = base_regressor
-
-    print(
-        f"Training RIDGE model with alpha={alpha} "
-        f"on {X_train.shape[0]} samples, {X_train.shape[1]} features"
-    )
-
-    t0 = time.time()
-    model.fit(X_train, y_train)
-    dt = time.time() - t0
-    print(f"Ridge model training completed in {dt:.2f} s")
-
-    return model
-
-
-def train_dtree_model(X_train, y_train):
-    """
-    Train a Decision Tree Regressor model for correlator prediction.
-    """
-    validate_model_training_inputs(X_train, y_train)
-
-    max_depth = getattr(config, "DTREE_MAX_DEPTH", 5)
-    min_samples_leaf = getattr(config, "DTREE_MIN_SAMPLES_LEAF", 5)
-    random_state = getattr(config, "RANDOM_SEED", 123)
-
-    base_regressor = DecisionTreeRegressor(
-        max_depth=max_depth,
-        min_samples_leaf=min_samples_leaf,
-        random_state=random_state,
-    )
-
-    if getattr(config, "USE_MULTI_OUTPUT", True):
-        print("Wrapping DecisionTree in MultiOutputRegressor")
-        model = MultiOutputRegressor(base_regressor, n_jobs=1)
-    else:
-        model = base_regressor
-
-    print(
-        "Training DTREE model with "
-        f"max_depth={max_depth}, min_samples_leaf={min_samples_leaf} "
-        f"on {X_train.shape[0]} samples, {X_train.shape[1]} features"
-    )
-
-    t0 = time.time()
-    model.fit(X_train, y_train)
-    dt = time.time() - t0
-    print(f"Decision Tree model training completed in {dt:.2f} s")
-
-    return model
-
-
-# ---------------------------------------------------------------------------
 # CNN model
 # ---------------------------------------------------------------------------
 
+if TORCH_AVAILABLE:
+    class _SimpleCNN1D(nn.Module):
+        """
+        Very small 1D CNN for correlator prediction.
+        Treats the input vector as a 1D sequence with 1 channel.
+        """
 
-class _SimpleCNN1D(nn.Module):
-    """
-    Very small 1D CNN for correlator prediction.
-    Treats the input vector as a 1D sequence with 1 channel.
-    """
+        def __init__(self, input_dim, output_dim):
+            super().__init__()
+            self.input_dim = input_dim
 
-    def __init__(self, input_dim, output_dim):
-        super().__init__()
-        self.input_dim = input_dim
+            self.conv = nn.Sequential(
+                nn.Conv1d(1, 16, kernel_size=5, padding=2),
+                nn.ReLU(),
+                nn.Conv1d(16, 32, kernel_size=5, padding=2),
+                nn.ReLU(),
+            )
+            self.fc = nn.Sequential(
+                nn.Linear(32 * input_dim, 128),
+                nn.ReLU(),
+                nn.Linear(128, output_dim),
+            )
 
-        self.conv = nn.Sequential(
-            nn.Conv1d(1, 16, kernel_size=5, padding=2),
-            nn.ReLU(),
-            nn.Conv1d(16, 32, kernel_size=5, padding=2),
-            nn.ReLU(),
-        )
-        self.fc = nn.Sequential(
-            nn.Linear(32 * input_dim, 128),
-            nn.ReLU(),
-            nn.Linear(128, output_dim),
-        )
-
-    def forward(self, x):
-        # x: (batch, input_dim)
-        x = x.view(x.size(0), 1, self.input_dim)   # (batch, 1, T)
-        x = self.conv(x)                           # (batch, 32, T)
-        x = x.view(x.size(0), -1)                  # (batch, 32*T)
-        x = self.fc(x)                             # (batch, output_dim)
-        return x
+        def forward(self, x):
+            # x: (batch, input_dim)
+            x = x.view(x.size(0), 1, self.input_dim)   # (batch, 1, T)
+            x = self.conv(x)                           # (batch, 32, T)
+            x = x.view(x.size(0), -1)                  # (batch, 32*T)
+            x = self.fc(x)                             # (batch, output_dim)
+            return x
 
 
 def train_cnn_model(X_train, y_train):
     """
     Train a small 1D CNN for correlator prediction.
     """
+    if not TORCH_AVAILABLE:
+        raise ImportError("PyTorch is not available. Cannot train CNN model.")
+    
     validate_model_training_inputs(X_train, y_train)
 
     input_dim = X_train.shape[1]
@@ -628,52 +562,55 @@ def train_cnn_model(X_train, y_train):
 # Transformer model
 # ---------------------------------------------------------------------------
 
+if TORCH_AVAILABLE:
+    class _SimpleTransformerRegressor(nn.Module):
+        """
+        Small Transformer encoder for correlator prediction.
 
-class _SimpleTransformerRegressor(nn.Module):
-    """
-    Small Transformer encoder for correlator prediction.
+        We embed each scalar time slice into d_model, run a few encoder layers,
+        pool over time, then map to output_dim.
+        """
 
-    We embed each scalar time slice into d_model, run a few encoder layers,
-    pool over time, then map to output_dim.
-    """
+        def __init__(self, input_dim, output_dim, d_model=64, nhead=4, num_layers=2):
+            super().__init__()
+            self.input_dim = input_dim
+            self.d_model = d_model
 
-    def __init__(self, input_dim, output_dim, d_model=64, nhead=4, num_layers=2):
-        super().__init__()
-        self.input_dim = input_dim
-        self.d_model = d_model
+            self.input_proj = nn.Linear(1, d_model)
 
-        self.input_proj = nn.Linear(1, d_model)
+            encoder_layer = nn.TransformerEncoderLayer(
+                d_model=d_model,
+                nhead=nhead,
+                dim_feedforward=4 * d_model,
+                batch_first=False,
+            )
+            self.encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
 
-        encoder_layer = nn.TransformerEncoderLayer(
-            d_model=d_model,
-            nhead=nhead,
-            dim_feedforward=4 * d_model,
-            batch_first=False,
-        )
-        self.encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+            self.fc = nn.Sequential(
+                nn.Linear(d_model, 128),
+                nn.ReLU(),
+                nn.Linear(128, output_dim),
+            )
 
-        self.fc = nn.Sequential(
-            nn.Linear(d_model, 128),
-            nn.ReLU(),
-            nn.Linear(128, output_dim),
-        )
-
-    def forward(self, x):
-        # x: (batch, input_dim)
-        bsz, T = x.shape
-        x = x.view(bsz, T, 1)           # (batch, T, 1)
-        x = self.input_proj(x)          # (batch, T, d_model)
-        x = x.transpose(0, 1)           # (T, batch, d_model)
-        enc = self.encoder(x)           # (T, batch, d_model)
-        pooled = enc.mean(dim=0)        # (batch, d_model)
-        out = self.fc(pooled)           # (batch, output_dim)
-        return out
+        def forward(self, x):
+            # x: (batch, input_dim)
+            bsz, T = x.shape
+            x = x.view(bsz, T, 1)           # (batch, T, 1)
+            x = self.input_proj(x)          # (batch, T, d_model)
+            x = x.transpose(0, 1)           # (T, batch, d_model)
+            enc = self.encoder(x)           # (T, batch, d_model)
+            pooled = enc.mean(dim=0)        # (batch, d_model)
+            out = self.fc(pooled)           # (batch, output_dim)
+            return out
 
 
 def train_transformer_model(X_train, y_train):
     """
     Train a small Transformer encoder for correlator prediction.
     """
+    if not TORCH_AVAILABLE:
+        raise ImportError("PyTorch is not available. Cannot train Transformer model.")
+    
     validate_model_training_inputs(X_train, y_train)
 
     input_dim = X_train.shape[1]
@@ -715,9 +652,28 @@ _MODEL_TRAINERS = {
     "MLP":         train_mlp_model,
     "RIDGE":       train_ridge_model,
     "DTREE":       train_dtree_model,
-    "CNN":         train_cnn_model,
-    "TRANSFORMER": train_transformer_model,
 }
+
+# Conditionally add PyTorch models if available
+if TORCH_AVAILABLE:
+    _MODEL_TRAINERS["CNN"] = train_cnn_model
+    _MODEL_TRAINERS["TRANSFORMER"] = train_transformer_model
+
+# Conditionally add GBR+PINNS if enabled
+if getattr(config, 'ENABLE_GBR_PINNS', False):
+    try:
+        from gbr_pinns_simple import train_gbr_pinns_model
+        print("GBR+PINNS registered in training system")
+        _MODEL_TRAINERS["GBR_PINNS"] = train_gbr_pinns_model
+    except ImportError as e:
+        print(f"Warning: Could not import GBR+PINNS: {e}")
+            print("Warning: This version does NOT apply physics constraints during training!")
+            _MODEL_TRAINERS["GBR_PINNS"] = train_gbr_pinns_model
+        except ImportError as e2:
+            print(f"Warning: Could not import any GBR+PINNS: {e2}")
+
+# Export the final dictionary
+MODEL_TRAINERS = _MODEL_TRAINERS
 
 
 def train_model_by_name(model_name, X_train, y_train):

@@ -73,7 +73,7 @@ plt.rcParams["axes.titlesize"] = 16
 plt.rcParams["legend.fontsize"] = 12
 
 # All model types that this script supports
-AVAILABLE_MODELS = ["GBR", "MLP", "RIDGE", "DTREE", "CNN", "TRANSFORMER"]
+AVAILABLE_MODELS = ["GBR", "MLP", "RIDGE", "DTREE", "CNN", "TRANSFORMER", "GBR_PINNS"]
 
 def save_ensemble_correlators(experiment_label, time_values, statistics):
     """
@@ -223,7 +223,7 @@ def main():
     Main analysis function that orchestrates the complete lattice QCD experiment.
     
     This function now includes integrated spectral fit analysis that automatically:
-    - Runs both simple and Vega-style spectral fit analyses
+    - Runs both simple and Bayesian two-state spectral fit analyses
     - Generates spectral fit plots for the current experiment
     - Includes spectral fit plots in the final PDF output
     - Saves individual spectral fit plots to their respective directories
@@ -406,7 +406,7 @@ def main():
             print(f"   {model_name} BC predictions shape: {pred_bc.shape}")
 
         # --------------------------------------------------------------
-        # 4b. Compute bias correction effect data (for Vega-style plots)
+        # 4b. Compute bias correction effect data (for Bayesian two-state spectral fit plots)
         # --------------------------------------------------------------
         print("\n4b. Computing bias correction effect data.")
         
@@ -463,7 +463,7 @@ def main():
 
         print(f"   Ensemble statistics computed for experiment: {experiment_label}")
 
-        # --- NEW: save ensemble means for Vega-style correlator plots ---
+        # --- NEW: save ensemble means for Bayesian two-state spectral fit correlator plots ---
         save_ensemble_correlators(experiment_label, time_values, statistics)
 
         # Map dict keys to nicer labels for printing
@@ -792,12 +792,12 @@ def main():
             
             print(f"   Generated {len(bayesian_overlay_figs)} Bayesian overlay plots + 1 comparison plot")
 
-        # Generate Vega-style bias correction effect plots
+        # Generate Bayesian two-state spectral fit bias correction effect plots
         vega_bias_correction_figs = {}
         vega_bias_correction_comparison_fig = None
         
         if bias_correction_effect_results:
-            print("   Generating Vega-style bias correction effect plots...")
+            print("   Generating Bayesian two-state spectral fit bias correction effect plots...")
             
             # Individual bias correction plots for each model
             for model_name in selected_models:
@@ -955,7 +955,7 @@ def main():
             if bayesian_comparison_fig:
                 figures.append(bayesian_comparison_fig)
         
-        # Add Vega-style bias correction effect plots
+        # Add Bayesian two-state spectral fit bias correction effect plots
         if bias_correction_effect_results:
             # Add individual Vega bias correction plots
             for model_key in vega_bias_correction_figs:

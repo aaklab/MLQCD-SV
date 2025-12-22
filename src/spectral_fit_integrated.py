@@ -3,7 +3,7 @@
 Integrated Spectral Fit Analysis
 
 This module provides spectral fit analysis that integrates with the main lattice QCD pipeline.
-It generates both simple and Vega-style spectral fit plots and saves them to the correct
+It generates both simple and Bayesian two-state spectral fit plots and saves them to the correct
 output directories created by the main analysis.
 """
 
@@ -261,7 +261,7 @@ def create_simple_spectral_plot(experiment_label, title, nt, param_file=None):
 
 def create_vega_spectral_plot(experiment_label, title, search_dirs, param_dirs=None):
     """
-    Create a Vega-style spectral fit plot with data points and fitted curves.
+    Create a Bayesian two-state spectral fit plot with data points and fitted curves.
     
     Parameters
     ----------
@@ -321,7 +321,7 @@ def create_vega_spectral_plot(experiment_label, title, search_dirs, param_dirs=N
         fig = plt.figure(figsize=(7, 5))
         plt.yscale("log")
         
-        # Vega-style zoom region
+        # Bayesian two-state spectral fit zoom region
         plt.xlim(0, 30)
         plt.ylim(1e-7, 1e-0)
         
@@ -346,7 +346,7 @@ def create_vega_spectral_plot(experiment_label, title, search_dirs, param_dirs=N
         
         plt.xlabel(r"$t$")
         plt.ylabel(r"$C(t)$")
-        plt.title(f"{title} - Vega-style Spectral Fit")
+        plt.title(f"{title} - Bayesian Two-State Spectral Fit")
         plt.legend(fontsize=8)
         plt.tight_layout()
         
@@ -359,7 +359,7 @@ def create_vega_spectral_plot(experiment_label, title, search_dirs, param_dirs=N
 
 def generate_integrated_spectral_plots(experiment_label, output_dir, time_values=None, statistics=None, fit_results=None):
     """
-    Generate both simple and Vega-style spectral fit plots for a given experiment.
+    Generate both simple and Bayesian two-state spectral fit plots for a given experiment.
     
     Parameters
     ----------
@@ -445,7 +445,7 @@ def generate_integrated_spectral_plots(experiment_label, output_dir, time_values
             figures.append(simple_fig)
             print(f"   Created simple spectral plot for inclusion in summary PDF")
         
-        # Generate Vega-style spectral fit plot from runtime data
+        # Generate Bayesian two-state spectral fit plot from runtime data
         vega_fig = create_vega_spectral_plot_from_runtime(
             experiment_label, title, time_values, statistics, fit_results
         )
@@ -480,8 +480,8 @@ def generate_integrated_spectral_plots(experiment_label, output_dir, time_values
             figures.append(simple_fig)
             print(f"   Created simple spectral plot for inclusion in summary PDF")
         
-        # Generate Vega-style spectral fit plot
-        print("   Creating Vega-style spectral fit plot...")
+        # Generate Bayesian two-state spectral fit plot
+        print("   Creating Bayesian two-state spectral fit plot...")
         vega_fig = create_vega_spectral_plot(experiment_label, title, correlator_search_dirs, param_search_dirs)
         if vega_fig is not None:
             figures.append(vega_fig)
@@ -591,7 +591,7 @@ def create_simple_spectral_plot_from_runtime(experiment_label, title, time_value
 
 def create_vega_spectral_plot_from_runtime(experiment_label, title, time_values, statistics, fit_results):
     """
-    Create a Vega-style spectral fit plot from runtime data.
+    Create a Bayesian two-state spectral fit plot from runtime data.
     
     Parameters
     ----------
@@ -617,7 +617,7 @@ def create_vega_spectral_plot_from_runtime(experiment_label, title, time_values,
         fig = plt.figure(figsize=(7, 5))
         plt.yscale("log")
         
-        # Vega-style zoom region
+        # Bayesian two-state spectral fit zoom region
         plt.xlim(0, 30)
         plt.ylim(1e-7, 1e-0)
         
@@ -682,7 +682,7 @@ def create_vega_spectral_plot_from_runtime(experiment_label, title, time_values,
         
         plt.xlabel(r"$t$")
         plt.ylabel(r"$C(t)$")
-        plt.title(f"{title} - Vega-style Spectral Fit")
+        plt.title(f"{title} - Bayesian Two-State Spectral Fit")
         plt.legend(fontsize=8)
         plt.tight_layout()
         

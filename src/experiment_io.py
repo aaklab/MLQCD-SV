@@ -352,7 +352,7 @@ def create_experiment_output_dir(experiment_label, selected_models=None):
     project_root = os.path.dirname(script_dir)
     
     # Create main results directory in project root
-    main_results_dir = os.path.join(project_root, "results")
+    main_results_dir = os.path.join(project_root, "results", "batch")
     os.makedirs(main_results_dir, exist_ok=True)
     
     # Create timestamped subdirectory

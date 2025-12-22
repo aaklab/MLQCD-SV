@@ -17,7 +17,7 @@ from pathlib import Path
 
 def export_correlator_means_to_csv(channel_stem, time_values, statistics, out_dir=None):
     """
-    Export ensemble-mean correlators for Vega-style spectral plots.
+    Export ensemble-mean correlators for Bayesian two-state spectral fit plots.
 
     Writes CSV with columns: t, truth, and all available model predictions
     Filename: <channel_stem>_correlators.csv
@@ -192,7 +192,7 @@ def print_fit_parameters_table(fit_results_dict, method_labels=None):
 
 def plot_vega_bias_correction_effect(bias_correction_data, model_label="MODEL"):
     """
-    Create the Vega-style plot showing the effect of bias correction on relative correlated difference.
+    Create the Bayesian two-state spectral fit plot showing the effect of bias correction on relative correlated difference.
     
     This reproduces the right-hand plot from Vega's paper showing "Rel. correlated diff." vs "Time extent"
     with two lines: bias-uncorrected (blue) and bias-corrected (red).

@@ -51,7 +51,35 @@ RANDOM_SEED = 42
 # 3. Model selection
 # ------------------------------------------------------------------
 
-RUN_MODELS = ["GBR"]  # Quick test with just one fast model
+RUN_MODELS = ["GBR", "GBR_PINNS"]  # Include GBR+PINNS for testing
+
+# ------------------------------------------------------------------
+# 8. GBR+PINNS configuration
+# ------------------------------------------------------------------
+
+# Enable GBR+PINNS method (Physics-Informed Neural Networks with GBR preprocessing)
+ENABLE_GBR_PINNS = True
+
+# GBR+PINNS Neural Network Architecture
+GBR_PINNS_HIDDEN_LAYERS = [32, 16]  # Smaller network for faster training
+GBR_PINNS_ACTIVATION = "tanh"  # Activation function (tanh, relu, etc.)
+GBR_PINNS_LEARNING_RATE = 1e-3
+GBR_PINNS_EPOCHS = 300  # Good balance of accuracy and training time
+GBR_PINNS_BATCH_SIZE = 32
+
+# Physics Loss Configuration
+GBR_PINNS_PHYSICS_WEIGHT = 0.5  # λ in Total Loss = Loss_Data + λ * Loss_Physics (increased for stronger physics)
+GBR_PINNS_DATA_WEIGHT = 1.0
+
+# Energy Parameter Constraints
+GBR_PINNS_E0_MIN = 0.01  # Minimum ground state energy
+GBR_PINNS_E1_MIN = 0.02  # Minimum excited state energy (E1 > E0)
+GBR_PINNS_AMPLITUDE_MIN = 1e-6  # Minimum amplitude
+
+# Training Configuration
+GBR_PINNS_OPTIMIZER = "adam"  # adam or lbfgs
+GBR_PINNS_PATIENCE = 50  # Early stopping patience
+GBR_PINNS_MIN_DELTA = 1e-6  # Minimum improvement for early stopping
 
 # Wrap regressors in MultiOutputRegressor
 USE_MULTI_OUTPUT = True
@@ -204,8 +232,8 @@ for T in T_VALUES:
 # ------------------------------------------------------------------
 
 GBR_MODE              = "balanced"
-GBR_N_ESTIMATORS      = 800      # many shallow trees
-GBR_LEARNING_RATE     = 0.02     # small step size
+GBR_N_ESTIMATORS      = 50       # Fast training (reduced from 800)
+GBR_LEARNING_RATE     = 0.1      # Faster convergence (increased from 0.02)
 GBR_MAX_DEPTH         = 3
 GBR_MIN_SAMPLES_SPLIT = 10
 GBR_MIN_SAMPLES_LEAF  = 5
